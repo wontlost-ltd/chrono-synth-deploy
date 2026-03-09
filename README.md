@@ -1,6 +1,6 @@
 # ChronoSynth Deploy
 
-ChronoSynth 统一部署项目 — 管理 [chrono-synth-os](https://github.com/rpang/chrono-synth-os)（后端）和 [chrono-synth-web](https://github.com/rpang/chrono-synth-web)（前端）的容器构建、配置与编排。
+ChronoSynth 统一部署项目 — 管理 [chrono-synth-os](https://github.com/wontlost-ltd/chrono-synth-os)（后端）和 [chrono-synth-web](https://github.com/wontlost-ltd/chrono-synth-web)（前端）的容器构建、配置与编排。
 
 ## 快速开始
 

@@ -2,7 +2,7 @@
 # 推送镜像到 GHCR
 set -euo pipefail
 
-REGISTRY="${REGISTRY:-ghcr.io/rpang}"
+REGISTRY="${REGISTRY:-ghcr.io/wontlost-ltd}"
 TAG="${TAG:-latest}"
 ENGINE="${ENGINE:-podman}"
 

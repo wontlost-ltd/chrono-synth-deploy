@@ -7,7 +7,7 @@
 
 services:
   backend:
-    image: ghcr.io/rpang/chrono-synth-os:latest
+    image: ghcr.io/wontlost-ltd/chrono-synth-os:latest
     build:
       context: ../../chrono-synth-os
       dockerfile: Dockerfile
@@ -53,7 +53,7 @@ services:
       - chrono-net
 
   frontend:
-    image: ghcr.io/rpang/chrono-synth-web:latest
+    image: ghcr.io/wontlost-ltd/chrono-synth-web:latest
     build:
       context: ../../chrono-synth-web
       dockerfile: Dockerfile

@@ -29,7 +29,7 @@ spec:
         fsGroup: 1000
       containers:
         - name: chrono-synth-os
-          image: ghcr.io/rpang/chrono-synth-os:latest
+          image: ghcr.io/wontlost-ltd/chrono-synth-os:latest
           ports:
             - name: http
               containerPort: 3000

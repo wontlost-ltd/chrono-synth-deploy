@@ -2,7 +2,7 @@
 # 将本地镜像导入 k3s（无 registry 模式）
 set -euo pipefail
 
-REGISTRY="${REGISTRY:-ghcr.io/rpang}"
+REGISTRY="${REGISTRY:-ghcr.io/wontlost-ltd}"
 TAG="${TAG:-latest}"
 ENGINE="${ENGINE:-podman}"
 

@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 # 默认值
-REGISTRY="${REGISTRY:-ghcr.io/rpang}"
+REGISTRY="${REGISTRY:-ghcr.io/wontlost-ltd}"
 TAG="${TAG:-latest}"
 ENGINE="${ENGINE:-podman}"
 

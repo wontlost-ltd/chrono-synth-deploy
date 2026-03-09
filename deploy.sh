@@ -23,7 +23,7 @@ error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 title() { echo -e "\n${BLUE}=== $1 ===${NC}\n"; }
 
 # 默认配置
-REGISTRY="${REGISTRY:-ghcr.io/rpang}"
+REGISTRY="${REGISTRY:-ghcr.io/wontlost-ltd}"
 TAG="${TAG:-latest}"
 ENGINE="${ENGINE:-podman}"
 NAMESPACE="chrono-synth"
@@ -39,7 +39,7 @@ usage() {
   echo "  $0 secrets                   生成安全密钥"
   echo ""
   echo "环境变量:"
-  echo "  REGISTRY   镜像仓库 (默认: ghcr.io/rpang)"
+  echo "  REGISTRY   镜像仓库 (默认: ghcr.io/wontlost-ltd)"
   echo "  TAG        镜像标签 (默认: latest)"
   echo "  ENGINE     容器引擎 (默认: podman)"
 }

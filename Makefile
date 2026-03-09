@@ -1,7 +1,7 @@
 # ChronoSynth 部署快捷命令
 .PHONY: help build push k3s-dev k3s-staging k3s-prod podman-up podman-down podman-logs status secrets clean
 
-REGISTRY ?= ghcr.io/rpang
+REGISTRY ?= ghcr.io/wontlost-ltd
 TAG ?= latest
 ENGINE ?= podman
 ENV ?= dev
