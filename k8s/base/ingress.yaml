@@ -1,0 +1,26 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: chrono-synth-ingress
+  namespace: chrono-synth
+  labels:
+    app.kubernetes.io/part-of: chrono-synth
+  annotations:
+    # Traefik（k3s 默认 Ingress Controller）
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    # WebSocket 支持
+    traefik.ingress.kubernetes.io/service.sticky.cookie: "false"
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: chrono.local
+      http:
+        paths:
+          # 前端（默认路由）
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: chrono-synth-web
+                port:
+                  number: 80

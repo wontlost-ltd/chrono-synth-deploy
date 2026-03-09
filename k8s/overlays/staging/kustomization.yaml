@@ -1,0 +1,45 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+patches:
+  # 后端：单副本
+  - target:
+      kind: Deployment
+      name: chrono-synth-os
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1
+
+  # 前端：单副本
+  - target:
+      kind: Deployment
+      name: chrono-synth-web
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1
+
+  # Ingress：staging 域名
+  - target:
+      kind: Ingress
+      name: chrono-synth-ingress
+    patch: |
+      - op: replace
+        path: /spec/rules/0/host
+        value: chrono.staging.local
+
+  # ConfigMap：staging 环境覆盖
+  - target:
+      kind: ConfigMap
+      name: backend-config
+    patch: |
+      - op: replace
+        path: /data/CHRONO_LOG_LEVEL
+        value: "info"
+      - op: replace
+        path: /data/CHRONO_CORS_ORIGIN
+        value: "false"

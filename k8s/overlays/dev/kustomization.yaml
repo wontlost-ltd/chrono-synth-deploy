@@ -1,0 +1,63 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+
+patches:
+  # 后端：单副本、低资源
+  - target:
+      kind: Deployment
+      name: chrono-synth-os
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: 50m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 64Mi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: 250m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 256Mi
+
+  # 前端：单副本
+  - target:
+      kind: Deployment
+      name: chrono-synth-web
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1
+
+  # Ingress：dev 域名
+  - target:
+      kind: Ingress
+      name: chrono-synth-ingress
+    patch: |
+      - op: replace
+        path: /spec/rules/0/host
+        value: chrono.dev.local
+
+  # ConfigMap：dev 环境覆盖
+  - target:
+      kind: ConfigMap
+      name: backend-config
+    patch: |
+      - op: replace
+        path: /data/CHRONO_LOG_LEVEL
+        value: "debug"
+      - op: replace
+        path: /data/CHRONO_AUTH_ENABLED
+        value: "false"
+      - op: replace
+        path: /data/CHRONO_CORS_ORIGIN
+        value: "true"
+      - op: replace
+        path: /data/CHRONO_INTELLIGENCE_PROVIDER
+        value: "mock"

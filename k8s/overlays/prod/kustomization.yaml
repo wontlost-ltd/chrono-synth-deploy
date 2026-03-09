@@ -1,0 +1,82 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - ../../base
+  - hpa.yaml
+
+patches:
+  # 后端：2 副本、高资源
+  - target:
+      kind: Deployment
+      name: chrono-synth-os
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 2
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/cpu
+        value: 200m
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 256Mi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "1"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 1Gi
+
+  # 前端：2 副本
+  - target:
+      kind: Deployment
+      name: chrono-synth-web
+    patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 2
+
+  # PostgreSQL：生产资源 + 大磁盘
+  - target:
+      kind: StatefulSet
+      name: postgres
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/requests/memory
+        value: 512Mi
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: 2Gi
+
+  # Ingress：生产域名 + TLS
+  - target:
+      kind: Ingress
+      name: chrono-synth-ingress
+    patch: |
+      - op: replace
+        path: /spec/rules/0/host
+        value: chrono.example.com
+      - op: add
+        path: /spec/tls
+        value:
+          - hosts:
+              - chrono.example.com
+            secretName: chrono-tls
+
+  # ConfigMap：生产环境覆盖
+  - target:
+      kind: ConfigMap
+      name: backend-config
+    patch: |
+      - op: replace
+        path: /data/CHRONO_LOG_LEVEL
+        value: "warn"
+      - op: replace
+        path: /data/CHRONO_AUTH_ENABLED
+        value: "true"
+      - op: replace
+        path: /data/CHRONO_CORS_ORIGIN
+        value: "https://chrono.example.com"
+      - op: replace
+        path: /data/CHRONO_RATE_LIMIT_MAX
+        value: "200"

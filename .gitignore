@@ -1,0 +1,17 @@
+# 环境文件（含密钥）
+podman/.env
+env/*.env
+!podman/.env.example
+
+# 生成的密钥（不要提交到 Git）
+# 注意：k8s/base/*/secrets.yaml 中的默认值是占位符
+# 实际部署时通过 generate-secrets.sh 替换
+
+# 临时文件
+*.tar
+*.tmp
+.DS_Store
+
+# IDE
+.idea/
+.vscode/

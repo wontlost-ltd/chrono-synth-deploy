@@ -1,0 +1,35 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: chrono-synth
+
+resources:
+  - namespace.yaml
+  # 后端
+  - backend/deployment.yaml
+  - backend/service.yaml
+  - backend/configmap.yaml
+  - backend/secrets.yaml
+  # 前端
+  - frontend/deployment.yaml
+  - frontend/service.yaml
+  - frontend/nginx-configmap.yaml
+  # PostgreSQL
+  - postgres/statefulset.yaml
+  - postgres/service.yaml
+  - postgres/secrets.yaml
+  # Redis
+  - redis/statefulset.yaml
+  - redis/service.yaml
+  # Jaeger
+  - jaeger/deployment.yaml
+  - jaeger/service.yaml
+  # 网络
+  - ingress.yaml
+  - network-policy.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: chrono-synth
+      app.kubernetes.io/managed-by: kustomize
+    includeSelectors: false
