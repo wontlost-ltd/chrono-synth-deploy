@@ -57,7 +57,7 @@ patches:
         value: "false"
       - op: replace
         path: /data/CHRONO_CORS_ORIGIN
-        value: "true"
+        value: "http://chrono.dev.local"
       - op: replace
         path: /data/CHRONO_INTELLIGENCE_PROVIDER
         value: "mock"
