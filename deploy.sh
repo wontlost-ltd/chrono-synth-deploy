@@ -120,11 +120,28 @@ deploy_k3s() {
   fi
 }
 
+# ── 检测 compose 工具 ──
+detect_compose() {
+  if command -v podman-compose &>/dev/null; then
+    echo "podman-compose"
+  elif $ENGINE compose version &>/dev/null; then
+    echo "$ENGINE compose"
+  elif command -v docker-compose &>/dev/null; then
+    echo "docker-compose"
+  else
+    error "未找到 compose 工具，请安装 podman-compose 或 docker-compose"
+    exit 1
+  fi
+}
+
 # ── podman 本地测试 ──
 deploy_podman() {
   local ACTION="${1:-up}"
   local COMPOSE_FILE="$SCRIPT_DIR/podman/podman-compose.yml"
   local ENV_FILE="$SCRIPT_DIR/podman/.env"
+  local COMPOSE_CMD
+  COMPOSE_CMD="$(detect_compose)"
+  info "使用 compose 工具: $COMPOSE_CMD"
 
   if [ ! -f "$ENV_FILE" ]; then
     warn ".env 文件不存在，从模板创建..."
@@ -135,7 +152,7 @@ deploy_podman() {
   case "$ACTION" in
     up)
       title "启动 podman 本地环境"
-      $ENGINE-compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
+      $COMPOSE_CMD -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
       echo ""
       info "等待服务就绪..."
       sleep 10
@@ -148,15 +165,15 @@ deploy_podman() {
       ;;
     down)
       title "停止 podman 本地环境"
-      $ENGINE-compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" down
+      $COMPOSE_CMD -f "$COMPOSE_FILE" --env-file "$ENV_FILE" down
       info "已停止"
       ;;
     logs)
-      $ENGINE-compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" logs -f "${2:-}"
+      $COMPOSE_CMD -f "$COMPOSE_FILE" --env-file "$ENV_FILE" logs -f "${2:-}"
       ;;
     build)
       title "构建本地镜像"
-      $ENGINE-compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build
+      $COMPOSE_CMD -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build
       ;;
     *)
       error "未知操作: $ACTION (可选: up, down, logs, build)"
