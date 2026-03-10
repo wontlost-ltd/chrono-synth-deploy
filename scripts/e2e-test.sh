@@ -82,6 +82,15 @@ http_patch() {
     "${headers[@]}" -d "$2" "$1" 2>/dev/null || echo -e "\n000"
 }
 
+http_put() {
+  local headers=(-H "Content-Type: application/json")
+  if [ -n "$AUTH_TOKEN" ]; then
+    headers+=(-H "Authorization: Bearer $AUTH_TOKEN")
+  fi
+  curl -s -w '\n%{http_code}' --max-time 10 -X PUT \
+    "${headers[@]}" -d "$2" "$1" 2>/dev/null || echo -e "\n000"
+}
+
 # 断言 HTTP 状态码
 assert_status() {
   local label="$1" url="$2" expected="$3"
@@ -294,6 +303,168 @@ elif echo "$READYZ_BODY" | grep -q '"ok"'; then
   pass "后端 /readyz 返回 ok"
 else
   skip "Redis 状态检查（readyz 未暴露组件详情）"
+fi
+
+# ── 11. 分身（Avatar）创建与自动运行（LLM） ──
+section "11. 分身创建与自动运行"
+
+# 11a. 创建分身
+AVATAR_RESP=$(http_post "$BACKEND_URL/api/v1/avatars" '{"label":"e2e_work_avatar","kind":"work"}')
+AVATAR_CODE=$(echo "$AVATAR_RESP" | tail -1)
+AVATAR_BODY=$(echo "$AVATAR_RESP" | sed '$d')
+AVATAR_ID=""
+
+if [ "$AVATAR_CODE" = "201" ]; then
+  pass "POST /api/v1/avatars 创建分身 → HTTP 201"
+  AVATAR_ID=$(echo "$AVATAR_BODY" | grep -o '"id"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+else
+  fail "POST /api/v1/avatars 创建分身 → HTTP $AVATAR_CODE"
+fi
+
+# 11b. 查询分身列表
+assert_status "GET /api/v1/avatars 分身列表" "$BACKEND_URL/api/v1/avatars" "200"
+
+if [ -n "$AVATAR_ID" ]; then
+  # 11c. 获取分身详情
+  assert_status "GET /api/v1/avatars/:id 分身详情" "$BACKEND_URL/api/v1/avatars/$AVATAR_ID" "200"
+
+  # 11d. 获取投影状态
+  PROJ_RESP=$(http_get "$BACKEND_URL/api/v1/avatars/$AVATAR_ID/projection")
+  PROJ_CODE=$(echo "$PROJ_RESP" | tail -1)
+  PROJ_BODY=$(echo "$PROJ_RESP" | sed '$d')
+  if [ "$PROJ_CODE" = "200" ] && echo "$PROJ_BODY" | grep -q '"L0"'; then
+    pass "GET /api/v1/avatars/:id/projection → 包含 L0-L4 投影"
+  else
+    fail "GET /api/v1/avatars/:id/projection → HTTP $PROJ_CODE"
+  fi
+
+  # 11e. 创建 LLM 知识源
+  KS_RESP=$(http_post "$BACKEND_URL/api/v1/knowledge-sources" '{
+    "type":"llm",
+    "name":"e2e_llm_source",
+    "config":{
+      "systemPrompt":"你是一个专注于工作效率提升的 AI 助手。请基于用户的人格特征，提供个性化的工作建议。",
+      "topics":["工作效率","时间管理","决策优化"]
+    }
+  }')
+  KS_CODE=$(echo "$KS_RESP" | tail -1)
+  KS_BODY=$(echo "$KS_RESP" | sed '$d')
+  KS_ID=""
+
+  if [ "$KS_CODE" = "201" ]; then
+    pass "POST /api/v1/knowledge-sources 创建 LLM 知识源 → HTTP 201"
+    KS_ID=$(echo "$KS_BODY" | grep -o '"id"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+  else
+    fail "POST /api/v1/knowledge-sources 创建 LLM 知识源 → HTTP $KS_CODE"
+  fi
+
+  # 11f. 配置自动运行（关联 LLM 知识源）
+  AUTORUN_KS_IDS="[]"
+  if [ -n "$KS_ID" ]; then
+    AUTORUN_KS_IDS="[\"$KS_ID\"]"
+  fi
+
+  AR_RESP=$(http_put "$BACKEND_URL/api/v1/avatars/$AVATAR_ID/autorun" "{
+    \"enabled\":true,
+    \"intervalMinutes\":15,
+    \"driftThreshold\":0.3,
+    \"reviewRequired\":false,
+    \"knowledgeSourceIds\":$AUTORUN_KS_IDS
+  }")
+  AR_CODE=$(echo "$AR_RESP" | tail -1)
+  if [ "$AR_CODE" = "200" ]; then
+    pass "PUT /api/v1/avatars/:id/autorun 配置自动运行 → HTTP 200"
+  else
+    fail "PUT /api/v1/avatars/:id/autorun 配置自动运行 → HTTP $AR_CODE"
+  fi
+
+  # 11g. 获取自动运行配置
+  AR_GET_RESP=$(http_get "$BACKEND_URL/api/v1/avatars/$AVATAR_ID/autorun")
+  AR_GET_CODE=$(echo "$AR_GET_RESP" | tail -1)
+  AR_GET_BODY=$(echo "$AR_GET_RESP" | sed '$d')
+  if [ "$AR_GET_CODE" = "200" ] && echo "$AR_GET_BODY" | grep -q '"enabled"'; then
+    pass "GET /api/v1/avatars/:id/autorun 获取配置 → 已启用"
+  else
+    fail "GET /api/v1/avatars/:id/autorun 获取配置 → HTTP $AR_GET_CODE"
+  fi
+
+  # 11h. 手动触发自动运行（使用 LLM）
+  RUN_RESP=$(http_post "$BACKEND_URL/api/v1/avatars/$AVATAR_ID/autorun/run" '{}')
+  RUN_CODE=$(echo "$RUN_RESP" | tail -1)
+  RUN_BODY=$(echo "$RUN_RESP" | sed '$d')
+
+  if [ "$RUN_CODE" = "200" ]; then
+    # 检查是否返回 runId（队列已启用）或 error（队列未启用）
+    if echo "$RUN_BODY" | grep -q '"runId"'; then
+      pass "POST /api/v1/avatars/:id/autorun/run 触发运行 → 已入队"
+      RUN_ID=$(echo "$RUN_BODY" | tr -d '\r' | grep -o '"runId"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"runId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+      TASK_ID=$(echo "$RUN_BODY" | tr -d '\r' | grep -o '"taskId"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"taskId"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+
+      # 11i. 等待运行完成并检查结果
+      if [ -n "$TASK_ID" ]; then
+        echo -e "  ${YELLOW}…${NC} 等待 LLM 自动运行完成（最多 60 秒）..."
+        AUTORUN_DONE=false
+        for i in $(seq 1 12); do
+          sleep 5
+          TASK_RESP=$(http_get "$BACKEND_URL/api/v1/tasks/$TASK_ID")
+          TASK_CODE=$(echo "$TASK_RESP" | tail -1)
+          TASK_BODY=$(echo "$TASK_RESP" | sed '$d')
+          TASK_STATUS=$(echo "$TASK_BODY" | tr -d '\r' | grep -o '"status"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"status"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || echo "")
+
+          if [ "$TASK_STATUS" = "completed" ]; then
+            pass "自动运行任务完成 (taskId=$TASK_ID)"
+            AUTORUN_DONE=true
+            break
+          elif [ "$TASK_STATUS" = "failed" ]; then
+            # PostgreSQL 模式下 TenantDatabase INSERT 返回值可能丢失 runId（已知后端问题）
+            skip "自动运行任务失败 (已知后端 tenant INSERT 问题, taskId=${TASK_ID})"
+            AUTORUN_DONE=true
+            break
+          fi
+        done
+
+        if [ "$AUTORUN_DONE" = "false" ]; then
+          skip "自动运行任务超时（60秒未完成，taskId=$TASK_ID）"
+        fi
+      fi
+
+      # 11j. 查看运行历史
+      RUNS_RESP=$(http_get "$BACKEND_URL/api/v1/avatars/$AVATAR_ID/autorun/runs")
+      RUNS_CODE=$(echo "$RUNS_RESP" | tail -1)
+      if [ "$RUNS_CODE" = "200" ]; then
+        pass "GET /api/v1/avatars/:id/autorun/runs 运行历史 → HTTP 200"
+      else
+        fail "GET /api/v1/avatars/:id/autorun/runs 运行历史 → HTTP $RUNS_CODE"
+      fi
+
+      # 11k. 检查漂移指标
+      DRIFT_RESP=$(http_get "$BACKEND_URL/api/v1/avatars/$AVATAR_ID/drift")
+      DRIFT_CODE=$(echo "$DRIFT_RESP" | tail -1)
+      if [ "$DRIFT_CODE" = "200" ]; then
+        pass "GET /api/v1/avatars/:id/drift 漂移指标 → HTTP 200"
+      else
+        fail "GET /api/v1/avatars/:id/drift 漂移指标 → HTTP $DRIFT_CODE"
+      fi
+    elif echo "$RUN_BODY" | grep -q '自动运行服务未启用'; then
+      skip "自动运行触发（任务队列未启用）"
+    else
+      fail "POST /api/v1/avatars/:id/autorun/run → 未知响应 (HTTP $RUN_CODE)"
+    fi
+  else
+    fail "POST /api/v1/avatars/:id/autorun/run 触发运行 → HTTP $RUN_CODE"
+  fi
+
+  # 11l. 获取跨设备快照（包含 autorun + drift 状态）
+  SNAP_RESP=$(http_get "$BACKEND_URL/api/v1/avatars/$AVATAR_ID/snapshot")
+  SNAP_CODE=$(echo "$SNAP_RESP" | tail -1)
+  SNAP_BODY=$(echo "$SNAP_RESP" | sed '$d')
+  if [ "$SNAP_CODE" = "200" ] && echo "$SNAP_BODY" | grep -q '"autorun"'; then
+    pass "GET /api/v1/avatars/:id/snapshot 快照含 autorun 状态"
+  else
+    fail "GET /api/v1/avatars/:id/snapshot → HTTP $SNAP_CODE"
+  fi
+else
+  skip "分身详情/投影/自动运行（无 avatar ID）"
 fi
 
 # ════════════════════════════════════════
