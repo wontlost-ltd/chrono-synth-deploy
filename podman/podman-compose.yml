@@ -7,6 +7,7 @@
 
 services:
   backend:
+    container_name: chrono-synth-backend
     image: ghcr.io/wontlost-ltd/chrono-synth-os:latest
     build:
       context: ../../chrono-synth-os
@@ -53,6 +54,7 @@ services:
       - chrono-net
 
   frontend:
+    container_name: chrono-synth-frontend
     image: ghcr.io/wontlost-ltd/chrono-synth-web:latest
     build:
       context: ../../chrono-synth-web
@@ -73,6 +75,7 @@ services:
       - chrono-net
 
   postgres:
+    container_name: chrono-synth-postgres
     image: postgres:17-alpine
     environment:
       POSTGRES_DB: chrono_synth
@@ -91,6 +94,7 @@ services:
       - chrono-net
 
   redis:
+    container_name: chrono-synth-redis
     image: redis:7-alpine
     command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
     volumes:
@@ -106,6 +110,7 @@ services:
       - chrono-net
 
   jaeger:
+    container_name: chrono-synth-jaeger
     image: jaegertracing/all-in-one:1.76.0
     ports:
       - "${JAEGER_PORT:-16686}:16686"

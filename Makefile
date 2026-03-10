@@ -1,5 +1,5 @@
 # ChronoSynth 部署快捷命令
-.PHONY: help build push k3s-dev k3s-staging k3s-prod podman-up podman-down podman-logs status secrets clean
+.PHONY: help build push k3s-dev k3s-staging k3s-prod podman-up podman-down podman-logs e2e status secrets clean
 
 REGISTRY ?= ghcr.io/wontlost-ltd
 TAG ?= latest
@@ -35,6 +35,9 @@ podman-logs: ## 查看本地 podman 日志
 
 podman-build: ## 构建本地 podman 镜像
 	./deploy.sh podman build
+
+e2e: ## 运行 E2E 测试（需先 podman-up）
+	bash scripts/e2e-test.sh
 
 status: ## 查看部署状态
 	./deploy.sh status
