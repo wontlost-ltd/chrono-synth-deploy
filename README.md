@@ -156,6 +156,9 @@ chrono-synth-deploy/
 │   │   ├── namespace.yaml
 │   │   └── network-policy.yaml
 │   └── overlays/
+│       ├── dev/
+│       ├── staging/
+│       └── prod/
 ├── podman/
 │   ├── .env.example
 │   └── prometheus/
