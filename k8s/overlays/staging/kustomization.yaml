@@ -31,6 +31,13 @@ patches:
       - op: replace
         path: /spec/rules/0/host
         value: chrono.staging.local
+  - target:
+      kind: Deployment
+      name: prometheus
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/args/4
+        value: --web.external-url=https://chrono.staging.local/prometheus/
 
   # ConfigMap：staging 环境覆盖
   - target:
@@ -42,4 +49,26 @@ patches:
         value: "info"
       - op: replace
         path: /data/CHRONO_CORS_ORIGIN
-        value: "false"
+        value: "https://chrono.staging.local"
+      - op: replace
+        path: /data/CHRONO_SERVER_PUBLIC_URL
+        value: "https://chrono.staging.local"
+      - op: replace
+        path: /data/CHRONO_AUTH_ENABLED
+        value: "true"
+      - op: replace
+        path: /data/CHRONO_AUTH_REQUIRE_DB_KEYS
+        value: "true"
+      - op: replace
+        path: /data/CHRONO_ENCRYPTION_ENABLED
+        value: "true"
+      - op: replace
+        path: /data/CHRONO_OBSERVABILITY_KAFKA_ENABLED
+        value: "true"
+  - target:
+      kind: ConfigMap
+      name: frontend-config
+    patch: |
+      - op: replace
+        path: /data/CHRONO_WEB_ENVIRONMENT
+        value: "staging"

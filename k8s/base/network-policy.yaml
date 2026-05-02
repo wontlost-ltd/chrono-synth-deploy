@@ -42,6 +42,9 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: chrono-synth-os
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: observability-worker
       ports:
         - protocol: TCP
           port: 5432

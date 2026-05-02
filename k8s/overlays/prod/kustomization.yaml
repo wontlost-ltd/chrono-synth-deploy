@@ -4,6 +4,9 @@ kind: Kustomization
 resources:
   - ../../base
   - hpa.yaml
+  - pdb-backend.yaml
+  - pdb-frontend.yaml
+  - pdb-worker.yaml
 
 patches:
   # 后端：2 副本、高资源
@@ -62,6 +65,13 @@ patches:
           - hosts:
               - chrono.example.com
             secretName: chrono-tls
+  - target:
+      kind: Deployment
+      name: prometheus
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/args/4
+        value: --web.external-url=https://chrono.example.com/prometheus/
 
   # ConfigMap：生产环境覆盖
   - target:
@@ -75,8 +85,30 @@ patches:
         path: /data/CHRONO_AUTH_ENABLED
         value: "true"
       - op: replace
+        path: /data/CHRONO_AUTH_REQUIRE_DB_KEYS
+        value: "true"
+      - op: replace
         path: /data/CHRONO_CORS_ORIGIN
         value: "https://chrono.example.com"
       - op: replace
+        path: /data/CHRONO_SERVER_PUBLIC_URL
+        value: "https://chrono.example.com"
+      - op: replace
+        path: /data/CHRONO_ENCRYPTION_ENABLED
+        value: "true"
+      - op: replace
+        path: /data/CHRONO_ENCRYPTION_DEFAULT_KEY_REF
+        value: "master"
+      - op: replace
+        path: /data/CHRONO_OBSERVABILITY_KAFKA_ENABLED
+        value: "true"
+      - op: replace
         path: /data/CHRONO_RATE_LIMIT_MAX
         value: "200"
+  - target:
+      kind: ConfigMap
+      name: frontend-config
+    patch: |
+      - op: replace
+        path: /data/CHRONO_WEB_ENVIRONMENT
+        value: "production"

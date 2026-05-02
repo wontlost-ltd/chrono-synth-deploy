@@ -1,0 +1,11 @@
+apiVersion: 1
+
+providers:
+  - name: ChronoSynth Enterprise
+    orgId: 1
+    folder: ChronoSynth
+    type: file
+    disableDeletion: false
+    editable: false
+    options:
+      path: /var/lib/grafana/dashboards

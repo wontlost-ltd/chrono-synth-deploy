@@ -1,13 +1,13 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: chrono-synth-os
+  name: observability-worker
   namespace: chrono-synth
   labels:
-    app.kubernetes.io/name: chrono-synth-os
-    app.kubernetes.io/component: backend
+    app.kubernetes.io/name: observability-worker
+    app.kubernetes.io/component: observability
 spec:
-  replicas: 2
+  replicas: 1
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -15,12 +15,12 @@ spec:
       maxSurge: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: chrono-synth-os
+      app.kubernetes.io/name: observability-worker
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: chrono-synth-os
-        app.kubernetes.io/component: backend
+        app.kubernetes.io/name: observability-worker
+        app.kubernetes.io/component: observability
     spec:
       terminationGracePeriodSeconds: 30
       securityContext:
@@ -28,11 +28,12 @@ spec:
         runAsUser: 1000
         fsGroup: 1000
       containers:
-        - name: chrono-synth-os
+        - name: observability-worker
           image: ghcr.io/wontlost-ltd/chrono-synth-os:latest
+          command: ["node", "dist/main-observability-worker.js"]
           ports:
             - name: http
-              containerPort: 3000
+              containerPort: 3100
               protocol: TCP
           securityContext:
             allowPrivilegeEscalation: false
@@ -45,11 +46,20 @@ spec:
             - secretRef:
                 name: backend-secrets
           env:
-            - name: CHRONO_AUTH_METRICS_API_KEYS
-              valueFrom:
-                secretKeyRef:
-                  name: prometheus-scrape-auth
-                  key: token
+            - name: CHRONO_REDIS_ENABLED
+              value: "false"
+            - name: CHRONO_QUEUE_ENABLED
+              value: "false"
+            - name: CHRONO_OTEL_SERVICE_NAME
+              value: chrono-synth-observability-worker
+            - name: CHRONO_OBSERVABILITY_WORKER_ENABLED
+              value: "true"
+            - name: CHRONO_OBSERVABILITY_WORKER_HTTP_ENABLED
+              value: "true"
+            - name: CHRONO_OBSERVABILITY_WORKER_HTTP_HOST
+              value: 0.0.0.0
+            - name: CHRONO_OBSERVABILITY_WORKER_HTTP_PORT
+              value: "3100"
           volumeMounts:
             - name: tmp
               mountPath: /tmp
@@ -71,10 +81,10 @@ spec:
             failureThreshold: 3
           resources:
             requests:
-              cpu: 100m
+              cpu: 50m
               memory: 128Mi
             limits:
-              cpu: 500m
+              cpu: 300m
               memory: 512Mi
       volumes:
         - name: tmp

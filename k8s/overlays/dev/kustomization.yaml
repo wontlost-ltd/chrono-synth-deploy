@@ -43,6 +43,13 @@ patches:
       - op: replace
         path: /spec/rules/0/host
         value: chrono.dev.local
+  - target:
+      kind: Deployment
+      name: prometheus
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/args/4
+        value: --web.external-url=http://chrono.dev.local/prometheus/
 
   # ConfigMap：dev 环境覆盖
   - target:
@@ -56,8 +63,24 @@ patches:
         path: /data/CHRONO_AUTH_ENABLED
         value: "false"
       - op: replace
+        path: /data/CHRONO_AUTH_REQUIRE_DB_KEYS
+        value: "false"
+      - op: replace
         path: /data/CHRONO_CORS_ORIGIN
         value: "http://chrono.dev.local"
       - op: replace
+        path: /data/CHRONO_SERVER_PUBLIC_URL
+        value: "http://chrono.dev.local"
+      - op: replace
+        path: /data/CHRONO_ENCRYPTION_ENABLED
+        value: "false"
+      - op: replace
         path: /data/CHRONO_INTELLIGENCE_PROVIDER
         value: "mock"
+  - target:
+      kind: ConfigMap
+      name: frontend-config
+    patch: |
+      - op: replace
+        path: /data/CHRONO_WEB_ENVIRONMENT
+        value: "development"

@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: imranismail/setup-kustomize@v2
+        with:
+          kustomize-version: 5.4.3
+      - name: Shell syntax
+        run: |
+          bash -n deploy.sh
+          find scripts -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+      - name: Validate Kustomize overlays
+        run: ./scripts/validate-k8s.sh

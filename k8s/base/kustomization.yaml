@@ -10,10 +10,19 @@ resources:
   - backend/service.yaml
   - backend/configmap.yaml
   - backend/secrets.yaml
+  - prometheus/scrape-auth-secret.yaml
+  - observability-worker/deployment.yaml
+  - observability-worker/service.yaml
   # 前端
+  - frontend/configmap.yaml
   - frontend/deployment.yaml
   - frontend/service.yaml
   - frontend/nginx-configmap.yaml
+  # 观测
+  - prometheus/deployment.yaml
+  - prometheus/service.yaml
+  - grafana/deployment.yaml
+  - grafana/service.yaml
   # PostgreSQL
   - postgres/statefulset.yaml
   - postgres/service.yaml
@@ -27,6 +36,23 @@ resources:
   # 网络
   - ingress.yaml
   - network-policy.yaml
+
+configMapGenerator:
+  - name: prometheus-config
+    files:
+      - prometheus/prometheus.yml
+  - name: grafana-datasources
+    files:
+      - provisioning-datasources.yml=grafana/provisioning/datasources/datasources.yml
+  - name: grafana-dashboards-provider
+    files:
+      - provisioning-dashboards.yml=grafana/provisioning/dashboards/dashboards.yml
+  - name: grafana-dashboard-chrono-synth-overview
+    files:
+      - chrono-synth-enterprise-overview.json=grafana/dashboards/chrono-synth-enterprise-overview.json
+
+generatorOptions:
+  disableNameSuffixHash: true
 
 labels:
   - pairs:

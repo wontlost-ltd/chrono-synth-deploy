@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: chrono-synth
+  labels:
+    app.kubernetes.io/name: chrono-synth-web
+    app.kubernetes.io/component: frontend
+data:
+  CHRONO_WEB_API_BASE_URL: ""
+  CHRONO_WEB_SENTRY_DSN: ""
+  CHRONO_WEB_ENVIRONMENT: "production"
