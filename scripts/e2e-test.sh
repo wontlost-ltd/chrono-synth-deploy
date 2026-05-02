@@ -16,10 +16,12 @@ if [ -f "$ENV_FILE" ]; then
   BACKEND_PORT=$(grep -E '^BACKEND_PORT=' "$ENV_FILE" 2>/dev/null | cut -d= -f2 || echo "3100")
   FRONTEND_PORT=$(grep -E '^FRONTEND_PORT=' "$ENV_FILE" 2>/dev/null | cut -d= -f2 || echo "8088")
   JAEGER_PORT=$(grep -E '^JAEGER_PORT=' "$ENV_FILE" 2>/dev/null | cut -d= -f2 || echo "16686")
+  ENTERPRISE_E2E_KMS_KEY_REF=$(grep -E '^ENTERPRISE_E2E_KMS_KEY_REF=' "$ENV_FILE" 2>/dev/null | cut -d= -f2- || echo "tenant_e2e_key")
 else
   BACKEND_PORT=3100
   FRONTEND_PORT=8088
   JAEGER_PORT=16686
+  ENTERPRISE_E2E_KMS_KEY_REF=tenant_e2e_key
 fi
 
 while [[ $# -gt 0 ]]; do
@@ -54,6 +56,11 @@ section() { echo -e "\n${BLUE}── $1 ──${NC}"; }
 
 # JWT token（认证后填充）
 AUTH_TOKEN=""
+TENANT_ID=""
+SCIM_TOKEN=""
+SCIM_EMAIL=""
+ORGANIZATION_ID=""
+KAFKA_NAMESPACE="tenant-e2e"
 
 # 通用 HTTP 请求（自动附加 Authorization header）
 http_get() {
@@ -89,6 +96,48 @@ http_put() {
   fi
   curl -s -w '\n%{http_code}' --max-time 10 -X PUT \
     "${headers[@]}" -d "$2" "$1" 2>/dev/null || echo -e "\n000"
+}
+
+response_code() {
+  echo "$1" | tail -1
+}
+
+response_body() {
+  echo "$1" | sed '$d'
+}
+
+summarize_body() {
+  echo "$1" \
+    | tr '\r\n' '  ' \
+    | sed 's/[[:space:]]\+/ /g' \
+    | cut -c1-240
+}
+
+extract_json_string() {
+  local body="$1" key="$2"
+  echo "$body" | tr -d '\r\n' \
+    | grep -o "\"${key}\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" \
+    | head -1 \
+    | sed "s/.*\"${key}\"[[:space:]]*:[[:space:]]*\"\([^\"]*\)\".*/\1/" || true
+}
+
+wait_for_body_keyword() {
+  local label="$1" url="$2" keyword="$3" attempts="${4:-12}" sleep_seconds="${5:-5}"
+  local response body code last_body="" last_code=""
+  for _ in $(seq 1 "$attempts"); do
+    response=$(http_get "$url")
+    code=$(response_code "$response")
+    body=$(response_body "$response")
+    last_code="$code"
+    last_body="$body"
+    if echo "$body" | grep -q "$keyword"; then
+      pass "$label → 包含 '$keyword'"
+      return 0
+    fi
+    sleep "$sleep_seconds"
+  done
+  fail "$label → 未在等待窗口内找到 '$keyword' (last HTTP $last_code, body: $(summarize_body "$last_body"))"
+  return 1
 }
 
 # 断言 HTTP 状态码
@@ -132,7 +181,16 @@ echo "Jaeger: $JAEGER_URL"
 # ── 1. 容器状态 ──
 section "1. 容器状态"
 ENGINE="${ENGINE:-podman}"
-for NAME in chrono-synth-backend chrono-synth-frontend chrono-synth-postgres chrono-synth-redis chrono-synth-jaeger; do
+for NAME in \
+  chrono-synth-backend \
+  chrono-synth-frontend \
+  chrono-synth-postgres \
+  chrono-synth-redis \
+  chrono-synth-redpanda \
+  chrono-synth-observability-worker \
+  chrono-synth-prometheus \
+  chrono-synth-grafana \
+  chrono-synth-jaeger; do
   STATUS=$($ENGINE inspect --format '{{.State.Status}}' "$NAME" 2>/dev/null || echo "not found")
   if [ "$STATUS" = "running" ]; then
     pass "$NAME → $STATUS"
@@ -153,13 +211,14 @@ E2E_PASSWORD="E2eTest!Pass123"
 
 # 注册
 REG_RESP=$(http_post "$BACKEND_URL/api/v1/auth/register" "{\"email\":\"$E2E_EMAIL\",\"password\":\"$E2E_PASSWORD\"}")
-REG_CODE=$(echo "$REG_RESP" | tail -1)
-REG_BODY=$(echo "$REG_RESP" | sed '$d')
+REG_CODE=$(response_code "$REG_RESP")
+REG_BODY=$(response_body "$REG_RESP")
 
 if [ "$REG_CODE" = "200" ] || [ "$REG_CODE" = "201" ]; then
   pass "POST /api/v1/auth/register → HTTP $REG_CODE"
   # 尝试从注册响应提取 token
-  AUTH_TOKEN=$(echo "$REG_BODY" | grep -o '"accessToken"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"accessToken"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || echo "")
+  AUTH_TOKEN=$(extract_json_string "$REG_BODY" "accessToken")
+  TENANT_ID=$(extract_json_string "$REG_BODY" "tenantId")
 else
   fail "POST /api/v1/auth/register → HTTP $REG_CODE"
 fi
@@ -167,12 +226,13 @@ fi
 # 如果注册未返回 token，走登录
 if [ -z "$AUTH_TOKEN" ]; then
   LOGIN_RESP=$(http_post "$BACKEND_URL/api/v1/auth/login" "{\"email\":\"$E2E_EMAIL\",\"password\":\"$E2E_PASSWORD\"}")
-  LOGIN_CODE=$(echo "$LOGIN_RESP" | tail -1)
-  LOGIN_BODY=$(echo "$LOGIN_RESP" | sed '$d')
+  LOGIN_CODE=$(response_code "$LOGIN_RESP")
+  LOGIN_BODY=$(response_body "$LOGIN_RESP")
 
   if [ "$LOGIN_CODE" = "200" ]; then
     pass "POST /api/v1/auth/login → HTTP $LOGIN_CODE"
-    AUTH_TOKEN=$(echo "$LOGIN_BODY" | grep -o '"accessToken"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"accessToken"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || echo "")
+    AUTH_TOKEN=$(extract_json_string "$LOGIN_BODY" "accessToken")
+    TENANT_ID=$(extract_json_string "$LOGIN_BODY" "tenantId")
   else
     fail "POST /api/v1/auth/login → HTTP $LOGIN_CODE"
   fi
@@ -184,11 +244,124 @@ else
   fail "获取 JWT token（后续认证测试将失败）"
 fi
 
+if [ -n "$TENANT_ID" ]; then
+  pass "获取 tenantId: $TENANT_ID"
+else
+  fail "获取 tenantId（后续企业控制面测试将失败）"
+fi
+
 # ── 4. 后端认证端点 ──
 section "4. 后端认证端点"
 assert_status "GET /metrics" "$BACKEND_URL/metrics" "200"
 assert_body_contains "GET /metrics 返回 uptime" "$BACKEND_URL/metrics" '"uptime_seconds"'
 assert_status "GET /api/v1/docs" "$BACKEND_URL/api/v1/docs" "200"
+
+# ── 4.1 企业控制面 / SCIM / RBAC ──
+section "4.1 企业控制面 / SCIM / RBAC"
+PROFILE_RESP=$(http_put "$BACKEND_URL/api/v1/admin/deployment/profile" "{
+  \"deploymentMode\":\"dedicated_db\",
+  \"databaseIsolationMode\":\"dedicated\",
+  \"kafkaNamespace\":\"$KAFKA_NAMESPACE\",
+  \"encryptionMode\":\"tenant_dedicated\",
+  \"kmsKeyRef\":\"$ENTERPRISE_E2E_KMS_KEY_REF\",
+  \"oidc\":{
+    \"enabled\":false,
+    \"scope\":\"openid profile email\",
+    \"emailClaim\":\"email\",
+    \"nameClaim\":\"name\"
+  }
+}")
+PROFILE_CODE=$(response_code "$PROFILE_RESP")
+PROFILE_BODY=$(response_body "$PROFILE_RESP")
+if [ "$PROFILE_CODE" = "200" ] && echo "$PROFILE_BODY" | grep -q "\"kafkaNamespace\":\"$KAFKA_NAMESPACE\""; then
+  pass "PUT /api/v1/admin/deployment/profile → 已写入 Kafka namespace"
+else
+  fail "PUT /api/v1/admin/deployment/profile → HTTP $PROFILE_CODE, body: $(summarize_body "$PROFILE_BODY")"
+fi
+
+SCIM_RESP=$(http_post "$BACKEND_URL/api/v1/admin/deployment/scim-token" '{}')
+SCIM_CODE=$(response_code "$SCIM_RESP")
+SCIM_BODY=$(response_body "$SCIM_RESP")
+SCIM_TOKEN=$(extract_json_string "$SCIM_BODY" "token")
+if [ "$SCIM_CODE" = "200" ] && [ -n "$SCIM_TOKEN" ]; then
+  pass "POST /api/v1/admin/deployment/scim-token → 生成 token"
+else
+  fail "POST /api/v1/admin/deployment/scim-token → HTTP $SCIM_CODE"
+fi
+
+PROFILE_GET_RESP=$(http_get "$BACKEND_URL/api/v1/admin/deployment/profile")
+PROFILE_GET_CODE=$(response_code "$PROFILE_GET_RESP")
+PROFILE_GET_BODY=$(response_body "$PROFILE_GET_RESP")
+if [ "$PROFILE_GET_CODE" = "200" ] && echo "$PROFILE_GET_BODY" | grep -q '"scimTokenConfigured":true'; then
+  pass "GET /api/v1/admin/deployment/profile → SCIM 已配置"
+else
+  fail "GET /api/v1/admin/deployment/profile → HTTP $PROFILE_GET_CODE"
+fi
+
+if [ -n "$SCIM_TOKEN" ]; then
+  $ENGINE exec chrono-synth-redpanda \
+    rpk topic create observability.events "$KAFKA_NAMESPACE.observability.events" --brokers redpanda:9092 \
+    >/dev/null 2>&1 || true
+  pass "Redpanda topic 就绪（observability.events / $KAFKA_NAMESPACE.observability.events）"
+
+  SCIM_EMAIL="scim_$(date +%s)@test.local"
+  SCIM_CREATE_RESP=$(curl -s -w '\n%{http_code}' --max-time 10 -X POST \
+    -H "Authorization: Bearer $SCIM_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "{\"userName\":\"$SCIM_EMAIL\",\"active\":true,\"name\":{\"formatted\":\"SCIM Enterprise Member\"}}" \
+    "$BACKEND_URL/scim/v2/Users" 2>/dev/null || echo -e "\n000")
+  SCIM_CREATE_CODE=$(response_code "$SCIM_CREATE_RESP")
+  SCIM_CREATE_BODY=$(response_body "$SCIM_CREATE_RESP")
+  SCIM_USER_ID=$(extract_json_string "$SCIM_CREATE_BODY" "id")
+  if { [ "$SCIM_CREATE_CODE" = "200" ] || [ "$SCIM_CREATE_CODE" = "201" ]; } && [ -n "$SCIM_USER_ID" ]; then
+    pass "POST /scim/v2/Users → 创建企业成员"
+  else
+    fail "POST /scim/v2/Users → HTTP $SCIM_CREATE_CODE"
+  fi
+
+  SCIM_LIST_RESP=$(curl -s -w '\n%{http_code}' --max-time 10 \
+    -H "Authorization: Bearer $SCIM_TOKEN" \
+    "$BACKEND_URL/scim/v2/Users?filter=userName%20eq%20%22$SCIM_EMAIL%22" 2>/dev/null || echo -e "\n000")
+  SCIM_LIST_CODE=$(response_code "$SCIM_LIST_RESP")
+  SCIM_LIST_BODY=$(response_body "$SCIM_LIST_RESP")
+  if [ "$SCIM_LIST_CODE" = "200" ] && echo "$SCIM_LIST_BODY" | grep -q "$SCIM_EMAIL"; then
+    pass "GET /scim/v2/Users → 查询到新成员"
+  else
+    fail "GET /scim/v2/Users → HTTP $SCIM_LIST_CODE"
+  fi
+else
+  fail "SCIM token 缺失，无法继续企业成员测试"
+fi
+
+ORG_RESP=$(http_post "$BACKEND_URL/api/v1/organizations" '{"name":"E2E Enterprise Org","slug":"e2e-enterprise-org","defaultWorkspaceName":"Operations","defaultWorkspaceSlug":"operations"}')
+ORG_CODE=$(response_code "$ORG_RESP")
+ORG_BODY=$(response_body "$ORG_RESP")
+ORGANIZATION_ID=$(extract_json_string "$ORG_BODY" "organizationId")
+if [ "$ORG_CODE" = "201" ] && [ -n "$ORGANIZATION_ID" ]; then
+  pass "POST /api/v1/organizations → 创建 organization"
+else
+  fail "POST /api/v1/organizations → HTTP $ORG_CODE"
+fi
+
+if [ -n "$ORGANIZATION_ID" ] && [ -n "$SCIM_EMAIL" ]; then
+  MEMBER_RESP=$(http_post "$BACKEND_URL/api/v1/organizations/$ORGANIZATION_ID/members" "{\"email\":\"$SCIM_EMAIL\",\"roles\":[\"viewer\",\"persona_operator\"]}")
+  MEMBER_CODE=$(response_code "$MEMBER_RESP")
+  MEMBER_BODY=$(response_body "$MEMBER_RESP")
+  if { [ "$MEMBER_CODE" = "200" ] || [ "$MEMBER_CODE" = "201" ]; } && echo "$MEMBER_BODY" | grep -q "$SCIM_EMAIL"; then
+    pass "POST /api/v1/organizations/:id/members → 绑定成员角色"
+  else
+    fail "POST /api/v1/organizations/:id/members → HTTP $MEMBER_CODE, body: $(summarize_body "$MEMBER_BODY")"
+  fi
+
+  ORG_MEMBERS_RESP=$(http_get "$BACKEND_URL/api/v1/organizations/$ORGANIZATION_ID/members")
+  ORG_MEMBERS_CODE=$(response_code "$ORG_MEMBERS_RESP")
+  ORG_MEMBERS_BODY=$(response_body "$ORG_MEMBERS_RESP")
+  if [ "$ORG_MEMBERS_CODE" = "200" ] && echo "$ORG_MEMBERS_BODY" | grep -q "$SCIM_EMAIL"; then
+    pass "GET /api/v1/organizations/:id/members → 可见 SCIM 成员"
+  else
+    fail "GET /api/v1/organizations/:id/members → HTTP $ORG_MEMBERS_CODE, body: $(summarize_body "$ORG_MEMBERS_BODY")"
+  fi
+fi
 
 # ── 5. 后端 API CRUD ──
 section "5. 后端 API（Values CRUD）"
@@ -251,10 +424,64 @@ assert_status "GET /api/v1/pos/survival" "$BACKEND_URL/api/v1/pos/survival" "200
 assert_status "GET /api/v1/pos/decision-style" "$BACKEND_URL/api/v1/pos/decision-style" "200"
 assert_status "GET /api/v1/pos/cognitive-model" "$BACKEND_URL/api/v1/pos/cognitive-model" "200"
 
+# ── 7.1 Persona Core / Marketplace ──
+section "7.1 Persona Core / Marketplace"
+PERSONA_ID=""
+TASK_ID=""
+
+PERSONA_RESP=$(http_post "$BACKEND_URL/api/v1/persona-core" '{"displayName":"E2E Persona","visibility":"marketplace","profile":{"mission":"podman smoke test"}}')
+PERSONA_CODE=$(echo "$PERSONA_RESP" | tail -1)
+PERSONA_BODY=$(echo "$PERSONA_RESP" | sed '$d')
+
+if [ "$PERSONA_CODE" = "200" ] || [ "$PERSONA_CODE" = "201" ]; then
+  pass "POST /api/v1/persona-core → HTTP $PERSONA_CODE"
+  PERSONA_ID=$(echo "$PERSONA_BODY" | grep -o '"id"[[:space:]]*:[[:space:]]*"pcore_[^"]*"' | head -1 | sed 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || echo "")
+else
+  fail "POST /api/v1/persona-core → HTTP $PERSONA_CODE"
+fi
+
+assert_status "GET /api/v1/persona-core" "$BACKEND_URL/api/v1/persona-core" "200"
+
+TASK_RESP=$(http_post "$BACKEND_URL/api/v1/marketplace/tasks" '{"title":"E2E Marketplace Task","description":"Validate persona marketplace flow","category":"operations","reward":42}')
+TASK_CODE=$(echo "$TASK_RESP" | tail -1)
+TASK_BODY=$(echo "$TASK_RESP" | sed '$d')
+
+if [ "$TASK_CODE" = "200" ] || [ "$TASK_CODE" = "201" ]; then
+  pass "POST /api/v1/marketplace/tasks → HTTP $TASK_CODE"
+  TASK_ID=$(echo "$TASK_BODY" | grep -o '"id"[[:space:]]*:[[:space:]]*"mkt_[^"]*"' | head -1 | sed 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || echo "")
+else
+  fail "POST /api/v1/marketplace/tasks → HTTP $TASK_CODE"
+fi
+
+assert_status "GET /api/v1/marketplace/tasks?status=open" "$BACKEND_URL/api/v1/marketplace/tasks?status=open" "200"
+
+if [ -n "$PERSONA_ID" ] && [ -n "$TASK_ID" ]; then
+  ACCEPT_RESP=$(http_post "$BACKEND_URL/api/v1/marketplace/tasks/$TASK_ID/accept" "{\"personaId\":\"$PERSONA_ID\"}")
+  ACCEPT_CODE=$(echo "$ACCEPT_RESP" | tail -1)
+  if [ "$ACCEPT_CODE" = "200" ]; then
+    pass "POST /api/v1/marketplace/tasks/:id/accept → HTTP $ACCEPT_CODE"
+  else
+    fail "POST /api/v1/marketplace/tasks/:id/accept → HTTP $ACCEPT_CODE"
+  fi
+
+  COMPLETE_RESP=$(http_post "$BACKEND_URL/api/v1/marketplace/tasks/$TASK_ID/complete" '{"qualityScore":0.9,"ownerTrainingHours":1}')
+  COMPLETE_CODE=$(echo "$COMPLETE_RESP" | tail -1)
+  if [ "$COMPLETE_CODE" = "200" ]; then
+    pass "POST /api/v1/marketplace/tasks/:id/complete → HTTP $COMPLETE_CODE"
+  else
+    fail "POST /api/v1/marketplace/tasks/:id/complete → HTTP $COMPLETE_CODE"
+  fi
+else
+  skip "Persona Core / Marketplace 接单闭环（缺少 personaId 或 taskId）"
+fi
+
 # ── 8. 前端 ──
 section "8. 前端"
 assert_status "GET / (HTML)" "$FRONTEND_URL/" "200"
+assert_status "GET /enterprise (SPA)" "$FRONTEND_URL/enterprise" "200"
 assert_body_contains "HTML 包含 root 容器" "$FRONTEND_URL/" '<div id="root"'
+assert_status "GET /persona-core (SPA)" "$FRONTEND_URL/persona-core" "200"
+assert_status "GET /marketplace (SPA)" "$FRONTEND_URL/marketplace" "200"
 
 # 前端反向代理到后端（需要 token）
 PROXY_RESP=$(http_get "$FRONTEND_URL/api/v1/docs")
@@ -267,6 +494,10 @@ else
 fi
 
 assert_body_contains "前端 /healthz 代理" "$FRONTEND_URL/healthz" '"status"'
+assert_body_contains "前端 /worker/healthz 代理" "$FRONTEND_URL/worker/healthz" '"status"'
+assert_body_contains "前端 /worker/readyz 代理" "$FRONTEND_URL/worker/readyz" '"components"'
+assert_status "前端 /prometheus/-/healthy 代理" "$FRONTEND_URL/prometheus/-/healthy" "200"
+assert_body_contains "前端 /grafana/api/health 代理" "$FRONTEND_URL/grafana/api/health" '"database"'
 
 # ── 9. Jaeger ──
 section "9. Jaeger UI"
@@ -304,6 +535,28 @@ elif echo "$READYZ_BODY" | grep -q '"ok"'; then
 else
   skip "Redis 状态检查（readyz 未暴露组件详情）"
 fi
+
+# ── 10.1 审计与观测闭环 ──
+section "10.1 审计与观测闭环"
+AUDIT_RESP=$(http_get "$BACKEND_URL/api/v1/audit/logs?eventKind=business&page=1&pageSize=20")
+AUDIT_CODE=$(response_code "$AUDIT_RESP")
+AUDIT_BODY=$(response_body "$AUDIT_RESP")
+if [ "$AUDIT_CODE" = "200" ] && echo "$AUDIT_BODY" | grep -Eq 'persona\.create|task\.acceptance|task\.submission'; then
+  pass "GET /api/v1/audit/logs → 业务审计事件可见"
+else
+  fail "GET /api/v1/audit/logs → HTTP $AUDIT_CODE 或缺少业务事件"
+fi
+
+WORKER_METRICS_RESP=$(http_get "$FRONTEND_URL/worker/metrics")
+WORKER_METRICS_CODE=$(response_code "$WORKER_METRICS_RESP")
+WORKER_METRICS_BODY=$(response_body "$WORKER_METRICS_RESP")
+if [ "$WORKER_METRICS_CODE" = "200" ] && echo "$WORKER_METRICS_BODY" | grep -q 'chrono_observability_worker_mode{mode="kafka"} 1'; then
+  pass "前端 /worker/metrics → worker 运行于 Kafka 模式"
+else
+  fail "前端 /worker/metrics → HTTP $WORKER_METRICS_CODE 或未进入 Kafka 模式, body: $(summarize_body "$WORKER_METRICS_BODY")"
+fi
+
+wait_for_body_keyword "后端 /metrics/prometheus 观测 rollup" "$BACKEND_URL/metrics/prometheus" 'chrono_task_success_total [1-9]' 12 5
 
 # ── 11. 分身（Avatar）创建与自动运行（LLM） ──
 section "11. 分身创建与自动运行"

@@ -4,7 +4,7 @@
 #
 # 用法:
 #   ./deploy.sh k3s [dev|staging|prod]    # 部署到 k3s
-#   ./deploy.sh podman [up|down|logs]     # 本地 podman 测试
+#   ./deploy.sh podman [build|up|down|logs] [service]  # 本地 podman 测试
 #   ./deploy.sh build [--push]            # 构建镜像（可选推送）
 #   ./deploy.sh status                    # 查看部署状态
 set -euo pipefail
@@ -33,7 +33,7 @@ usage() {
   echo ""
   echo "用法:"
   echo "  $0 k3s [dev|staging|prod]    部署到 k3s 集群"
-  echo "  $0 podman [up|down|logs]     本地 podman 容器测试"
+  echo "  $0 podman [build|up|down|logs] [service]  本地原生 podman 容器测试"
   echo "  $0 build [--push]            构建并可选推送镜像"
   echo "  $0 status                    查看 k3s 部署状态"
   echo "  $0 secrets                   生成安全密钥"
@@ -120,66 +120,9 @@ deploy_k3s() {
   fi
 }
 
-# ── 检测 compose 工具 ──
-detect_compose() {
-  if command -v podman-compose &>/dev/null; then
-    echo "podman-compose"
-  elif $ENGINE compose version &>/dev/null; then
-    echo "$ENGINE compose"
-  elif command -v docker-compose &>/dev/null; then
-    echo "docker-compose"
-  else
-    error "未找到 compose 工具，请安装 podman-compose 或 docker-compose"
-    exit 1
-  fi
-}
-
 # ── podman 本地测试 ──
 deploy_podman() {
-  local ACTION="${1:-up}"
-  local COMPOSE_FILE="$SCRIPT_DIR/podman/podman-compose.yml"
-  local ENV_FILE="$SCRIPT_DIR/podman/.env"
-  local COMPOSE_CMD
-  COMPOSE_CMD="$(detect_compose)"
-  info "使用 compose 工具: $COMPOSE_CMD"
-
-  if [ ! -f "$ENV_FILE" ]; then
-    warn ".env 文件不存在，从模板创建..."
-    cp "$SCRIPT_DIR/podman/.env.example" "$ENV_FILE"
-    info "已创建 $ENV_FILE，请根据需要修改配置"
-  fi
-
-  case "$ACTION" in
-    up)
-      title "启动 podman 本地环境"
-      $COMPOSE_CMD -f "$COMPOSE_FILE" --env-file "$ENV_FILE" up -d
-      echo ""
-      info "等待服务就绪..."
-      sleep 10
-      bash "$SCRIPT_DIR/scripts/health-check.sh" "http://localhost:$(grep FRONTEND_PORT "$ENV_FILE" 2>/dev/null | cut -d= -f2 || echo 80)" || true
-      echo ""
-      info "服务已启动！"
-      info "  前端:    http://localhost:$(grep FRONTEND_PORT "$ENV_FILE" 2>/dev/null | cut -d= -f2 || echo 80)"
-      info "  后端:    http://localhost:$(grep BACKEND_PORT "$ENV_FILE" 2>/dev/null | cut -d= -f2 || echo 3000)"
-      info "  Jaeger:  http://localhost:$(grep JAEGER_PORT "$ENV_FILE" 2>/dev/null | cut -d= -f2 || echo 16686)"
-      ;;
-    down)
-      title "停止 podman 本地环境"
-      $COMPOSE_CMD -f "$COMPOSE_FILE" --env-file "$ENV_FILE" down
-      info "已停止"
-      ;;
-    logs)
-      $COMPOSE_CMD -f "$COMPOSE_FILE" --env-file "$ENV_FILE" logs -f "${2:-}"
-      ;;
-    build)
-      title "构建本地镜像"
-      $COMPOSE_CMD -f "$COMPOSE_FILE" --env-file "$ENV_FILE" build
-      ;;
-    *)
-      error "未知操作: $ACTION (可选: up, down, logs, build)"
-      exit 1
-      ;;
-  esac
+  bash "$SCRIPT_DIR/scripts/podman-native.sh" "${1:-up}" "${2:-}"
 }
 
 # ── 构建镜像 ──

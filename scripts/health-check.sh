@@ -15,22 +15,26 @@ error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
 warn()  { echo -e "${YELLOW}[WAIT]${NC} $1"; }
 
 ENDPOINTS=(
+  "/:前端页面"
   "/healthz:后端健康检查"
   "/readyz:后端就绪检查"
-  "/:前端页面"
+  "/worker/healthz:独立观测 worker 健康检查"
+  "/worker/readyz:独立观测 worker 就绪检查"
+  "/prometheus/-/healthy:Prometheus 健康检查"
+  "/grafana/api/health:Grafana 健康检查"
 )
 
 info "目标地址: $BASE_URL"
 info "等待服务就绪..."
 
-# 等待后端就绪
+# 等待前端代理与后端就绪
 for ((i=1; i<=MAX_RETRIES; i++)); do
-  if curl -sf "${BASE_URL}/healthz" >/dev/null 2>&1; then
-    info "后端已就绪！(第 ${i} 次检查)"
+  if curl -sf "${BASE_URL}/" >/dev/null 2>&1 && curl -sf "${BASE_URL}/healthz" >/dev/null 2>&1; then
+    info "前端代理与后端已就绪！(第 ${i} 次检查)"
     break
   fi
   if [ "$i" -eq "$MAX_RETRIES" ]; then
-    error "后端未在 $((MAX_RETRIES * RETRY_INTERVAL)) 秒内就绪"
+    error "前端代理 / 后端未在 $((MAX_RETRIES * RETRY_INTERVAL)) 秒内就绪"
     exit 1
   fi
   warn "等待中... (${i}/${MAX_RETRIES})"

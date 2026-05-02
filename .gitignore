@@ -1,5 +1,6 @@
 # 环境文件（含密钥）
 podman/.env
+podman/.runtime/
 env/*.env
 !podman/.env.example
 
@@ -15,3 +16,5 @@ env/*.env
 # IDE
 .idea/
 .vscode/
+**/.DS_Store
+*.iml
