@@ -84,7 +84,7 @@ assert_contains "$TMP_DIR/prod.yaml"    'CHRONO_DATA_PLANE_AUTHORITY_MODE:' 'pro
 
 # 生产环境默认必须是 tables_primary（最保守模式），
 # 晋升到 dual_write/ledger_primary 须通过 Admin API per-tenant 控制，不能全局写死。
-assert_contains "$TMP_DIR/prod.yaml" 'CHRONO_DATA_PLANE_AUTHORITY_MODE: "tables_primary"' \
+assert_contains "$TMP_DIR/prod.yaml" 'CHRONO_DATA_PLANE_AUTHORITY_MODE: "?tables_primary"?' \
   'prod 数据平面默认模式为 tables_primary（通过 Admin API 逐租户晋升）'
 
 # ── KMS / Storage 提供方 ──────────────────────────────────────────────────────
