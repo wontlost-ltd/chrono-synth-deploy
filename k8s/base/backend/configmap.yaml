@@ -38,3 +38,10 @@ data:
   CHRONO_OBSERVABILITY_KAFKA_STARTUP_WAIT_MS: "45000"
   CHRONO_INTELLIGENCE_PROVIDER: "mock"
   CHRONO_STRIPE_ENABLED: "false"
+  # 数据平面权威模式：tables_primary | dual_write | ledger_primary | rollback_tables
+  # 通过 Admin API per-tenant 精细控制，此处为新租户默认值
+  CHRONO_DATA_PLANE_AUTHORITY_MODE: "tables_primary"
+  # KMS 提供方：platform | aws_kms | gcp_kms | azure_kv | vault
+  CHRONO_KMS_PROVIDER: "platform"
+  # 对象存储提供方：platform | s3 | gcs | azure_blob | local
+  CHRONO_STORAGE_PROVIDER: "platform"

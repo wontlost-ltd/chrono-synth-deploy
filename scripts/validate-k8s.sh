@@ -75,4 +75,24 @@ assert_contains "$TMP_DIR/prod.yaml" 'CHRONO_OBSERVABILITY_KAFKA_ENABLED: "true"
 assert_contains "$TMP_DIR/prod.yaml" '--web.external-url=https://chrono.example.com/prometheus/' 'prod Prometheus external URL 正确'
 assert_count_at_least "$TMP_DIR/prod.yaml" '^kind: PodDisruptionBudget$' 3 'prod 包含 backend/frontend/worker PDB'
 
+# ── 数据平面权威模式 ───────────────────────────────────────────────────────────
+# 确保所有 overlay 都声明了 CHRONO_DATA_PLANE_AUTHORITY_MODE，
+# 防止环境变量缺失导致服务器以未知模式启动。
+assert_contains "$TMP_DIR/dev.yaml"     'CHRONO_DATA_PLANE_AUTHORITY_MODE:' 'dev 声明数据平面权威模式'
+assert_contains "$TMP_DIR/staging.yaml" 'CHRONO_DATA_PLANE_AUTHORITY_MODE:' 'staging 声明数据平面权威模式'
+assert_contains "$TMP_DIR/prod.yaml"    'CHRONO_DATA_PLANE_AUTHORITY_MODE:' 'prod 声明数据平面权威模式'
+
+# 生产环境默认必须是 tables_primary（最保守模式），
+# 晋升到 dual_write/ledger_primary 须通过 Admin API per-tenant 控制，不能全局写死。
+assert_contains "$TMP_DIR/prod.yaml" 'CHRONO_DATA_PLANE_AUTHORITY_MODE: "tables_primary"' \
+  'prod 数据平面默认模式为 tables_primary（通过 Admin API 逐租户晋升）'
+
+# ── KMS / Storage 提供方 ──────────────────────────────────────────────────────
+assert_contains "$TMP_DIR/dev.yaml"     'CHRONO_KMS_PROVIDER:'     'dev 声明 KMS 提供方'
+assert_contains "$TMP_DIR/staging.yaml" 'CHRONO_KMS_PROVIDER:'     'staging 声明 KMS 提供方'
+assert_contains "$TMP_DIR/prod.yaml"    'CHRONO_KMS_PROVIDER:'     'prod 声明 KMS 提供方'
+assert_contains "$TMP_DIR/dev.yaml"     'CHRONO_STORAGE_PROVIDER:' 'dev 声明对象存储提供方'
+assert_contains "$TMP_DIR/staging.yaml" 'CHRONO_STORAGE_PROVIDER:' 'staging 声明对象存储提供方'
+assert_contains "$TMP_DIR/prod.yaml"    'CHRONO_STORAGE_PROVIDER:' 'prod 声明对象存储提供方'
+
 printf '\n[OK] All overlays passed validation.\n'

@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: chrono-synth
+data:
+  CHRONO_KMS_PROVIDER: "aws_kms"
