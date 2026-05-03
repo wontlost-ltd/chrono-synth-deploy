@@ -5,7 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 if command -v kustomize >/dev/null 2>&1; then
-  KUSTOMIZE=(kustomize)
+  KUSTOMIZE=(kustomize build)
 elif command -v kubectl >/dev/null 2>&1; then
   KUSTOMIZE=(kubectl kustomize)
 else
