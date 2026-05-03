@@ -11,10 +11,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Install kustomize
+      - name: Ensure kustomize
         run: |
-          curl -sSfL "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" \
-            | bash -s -- 5.4.3 /usr/local/bin
+          if ! command -v kustomize &>/dev/null; then
+            curl -sSfL "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" \
+              | bash -s -- 5.4.3 /usr/local/bin
+          fi
+          kustomize version
       - name: Shell syntax
         run: |
           bash -n deploy.sh
