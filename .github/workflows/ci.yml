@@ -20,3 +20,5 @@ jobs:
           find scripts -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
       - name: Validate Kustomize overlays
         run: ./scripts/validate-k8s.sh
+      - name: Portability conformance (offline / schema)
+        run: bash scripts/portability-conformance.sh --offline

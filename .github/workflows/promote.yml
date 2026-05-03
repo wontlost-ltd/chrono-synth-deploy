@@ -1,0 +1,96 @@
+name: Promote
+
+on:
+  repository_dispatch:
+    types:
+      - chrono-os-released
+      - chrono-web-released
+
+jobs:
+  update-image-tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Determine changed service
+        id: service
+        run: |
+          if [ "${{ github.event.action }}" = "chrono-os-released" ]; then
+            echo "name=chrono-synth-os" >> "$GITHUB_OUTPUT"
+            echo "image=ghcr.io/wontlost-ltd/chrono-synth-os" >> "$GITHUB_OUTPUT"
+          else
+            echo "name=chrono-synth-web" >> "$GITHUB_OUTPUT"
+            echo "image=ghcr.io/wontlost-ltd/chrono-synth-web" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=${{ github.event.client_payload.version }}" >> "$GITHUB_OUTPUT"
+          echo "actor=${{ github.event.client_payload.actor }}" >> "$GITHUB_OUTPUT"
+          echo "sha=${{ github.event.client_payload.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Validate Kustomize overlays
+        run: ./scripts/validate-k8s.sh
+
+      - name: Run shell lint
+        run: |
+          bash -n deploy.sh
+          find scripts -type f -name '*.sh' -print0 | xargs -0 -n1 bash -n
+
+      - name: Run portability conformance
+        run: bash scripts/portability-conformance.sh --offline
+        continue-on-error: true
+
+      - name: Create promotion PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const service = '${{ steps.service.outputs.name }}';
+            const version = '${{ steps.service.outputs.version }}';
+            const actor  = '${{ steps.service.outputs.actor }}';
+            const sha    = '${{ steps.service.outputs.sha }}';
+
+            const branch = `release/${service}-${version}`;
+
+            // Create branch from main
+            const mainRef = await github.rest.git.getRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'heads/main',
+            });
+            try {
+              await github.rest.git.createRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `refs/heads/${branch}`,
+                sha: mainRef.data.object.sha,
+              });
+            } catch (e) {
+              if (!e.message.includes('already exists')) throw e;
+            }
+
+            await github.rest.pulls.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `release: promote ${service} ${version} to staging`,
+              head: branch,
+              base: 'main',
+              body: [
+                `## Release Promotion`,
+                ``,
+                `| Field | Value |`,
+                `|-------|-------|`,
+                `| Service | \`${service}\` |`,
+                `| Version | \`${version}\` |`,
+                `| Commit | \`${sha.slice(0, 8)}\` |`,
+                `| Triggered by | @${actor} |`,
+                ``,
+                `### Checklist`,
+                `- [ ] Kustomize validation passed`,
+                `- [ ] Portability conformance passed`,
+                `- [ ] Staging smoke test passed`,
+                `- [ ] Approved by on-call`,
+              ].join('\n'),
+            });

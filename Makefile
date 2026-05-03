@@ -1,5 +1,5 @@
 # ChronoSynth 部署快捷命令
-.PHONY: help build push k3s-dev k3s-staging k3s-prod podman-up podman-down podman-logs e2e status secrets clean
+.PHONY: help build push k3s-dev k3s-staging k3s-prod podman-up podman-down podman-logs e2e status secrets conformance conformance-offline clean
 
 REGISTRY ?= ghcr.io/wontlost-ltd
 TAG ?= latest
@@ -47,6 +47,12 @@ secrets: ## 生成安全密钥
 
 render: ## 渲染 Kustomize（预览）
 	kubectl kustomize k8s/overlays/$(ENV)
+
+conformance: ## 运行 portability conformance suite（需后端运行）
+	bash scripts/portability-conformance.sh
+
+conformance-offline: ## 运行 portability conformance suite（离线/schema 模式）
+	bash scripts/portability-conformance.sh --offline
 
 clean: ## 清理本地容器和卷
 	./deploy.sh podman down
