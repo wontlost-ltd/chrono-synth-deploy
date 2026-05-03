@@ -95,4 +95,37 @@ assert_contains "$TMP_DIR/dev.yaml"     'CHRONO_STORAGE_PROVIDER:' 'dev 声明�
 assert_contains "$TMP_DIR/staging.yaml" 'CHRONO_STORAGE_PROVIDER:' 'staging 声明对象存储提供方'
 assert_contains "$TMP_DIR/prod.yaml"    'CHRONO_STORAGE_PROVIDER:' 'prod 声明对象存储提供方'
 
+# ── BYOK 配置完整性 ───────────────────────────────────────────────────────────
+# 若 overlay 声明了非 platform 的 KMS 提供方，则必须同时包含对应的 KMS Secret 引用，
+# 防止 pod 以无效 KMS 配置启动（KMS 调用会失败但不会在启动时报错）。
+for overlay_file in "$TMP_DIR/staging.yaml" "$TMP_DIR/prod.yaml"; do
+  overlay_name="$(basename "$overlay_file" .yaml)"
+  kms_provider="$(grep -oE 'CHRONO_KMS_PROVIDER:[[:space:]]+"?[a-z_]+"?' "$overlay_file" \
+    | tail -1 | grep -oE '[a-z_]+$' || echo 'platform')"
+  if [ "$kms_provider" != "platform" ]; then
+    # 非 platform 模式必须存在 KMS secret 挂载或 SecretKeyRef 引用
+    if ! grep -Eq 'CHRONO_KMS_|kms.*[Ss]ecret|[Ss]ecret.*kms' "$overlay_file"; then
+      fail "$overlay_name: KMS 提供方为 '$kms_provider' 但未找到 KMS Secret 引用"
+    else
+      pass "$overlay_name: BYOK 非 platform 模式包含 KMS Secret 引用"
+    fi
+  else
+    pass "$overlay_name: BYOK 使用 platform 模式（无需外部 KMS Secret）"
+  fi
+done
+
+# ── Event Ledger / Projection Store 相关资源 ─────────────────────────────────
+# Projection flush worker 由 CHRONO_OBSERVABILITY_WORKER_ENABLED 控制，
+# staging 和 prod 必须明确声明该开关，防止投影消费者静默关闭导致 ledger 积压。
+assert_contains "$TMP_DIR/staging.yaml" 'CHRONO_OBSERVABILITY_WORKER_ENABLED:' \
+  'staging 声明 observability worker（event ledger projection consumer）'
+assert_contains "$TMP_DIR/prod.yaml"    'CHRONO_OBSERVABILITY_WORKER_ENABLED:' \
+  'prod 声明 observability worker（event ledger projection consumer）'
+
+# 确认 staging/prod ConfigMap 包含 event ledger outbox topic 配置
+assert_contains "$TMP_DIR/staging.yaml" 'CHRONO_OBSERVABILITY_KAFKA_TOPIC:' \
+  'staging 声明 event ledger outbox Kafka topic'
+assert_contains "$TMP_DIR/prod.yaml"    'CHRONO_OBSERVABILITY_KAFKA_TOPIC:' \
+  'prod 声明 event ledger outbox Kafka topic'
+
 printf '\n[OK] All overlays passed validation.\n'
