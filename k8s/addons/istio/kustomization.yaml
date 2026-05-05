@@ -1,0 +1,22 @@
+# Istio addon group.
+#
+# Apply order matters here:
+#   1. istioctl operator init (runs once per cluster, manual)
+#   2. kubectl apply -f istio-operator.yaml (control plane)
+#   3. wait until istio-system pods are ready (~60s)
+#   4. kubectl apply -k k8s/addons/istio/ (this group; injects sidecar
+#      into chrono-synth namespace, then applies mTLS + authz policies)
+#
+# The chrono-synth pods then need a rolling restart to pick up the
+# sidecar (`kubectl -n chrono-synth rollout restart deployment`).
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - peer-authentication.yaml
+  - authorization-policy.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: chrono-synth-istio
+  managed-by: kustomize

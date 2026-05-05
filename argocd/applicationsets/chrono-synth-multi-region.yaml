@@ -1,0 +1,108 @@
+# P3.6 — multi-region active-active ApplicationSet.
+#
+# Generates one Application per (region, environment) pair from a single
+# template. Both regions run the full chrono-synth stack; Route53
+# weighted-routing splits user traffic between them.
+#
+# Currently scoped to prod only; staging / dev stay single-region (cost +
+# operational simplicity outweighs the DR drill value at lower envs).
+#
+# Prerequisites tracked in docs/operations/multi-region-runbook.md:
+#   - Both clusters registered in the ArgoCD `argocd-cm` clusters list
+#     with names `prod-us-west` and `prod-eu-west`.
+#   - Postgres has a cross-region read replica in eu-west-1 with
+#     synchronous replication. Failover is manual (the replica promotes
+#     to primary; us-west becomes the secondary).
+#   - Redis is region-local (no cross-region replication; cache layer is
+#     allowed to start cold on failover).
+#   - KMS keys are multi-region replicas (terraform module sets multi_region
+#     when env=prod and region count > 1).
+
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: chrono-synth-prod-multi-region
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ['missingkey=error']
+
+  generators:
+    - matrix:
+        generators:
+          # 一维：region
+          - list:
+              elements:
+                - region: us-west
+                  cluster: prod-us-west
+                  weight: 70  # 主区域承担 70% 流量
+                - region: eu-west
+                  cluster: prod-eu-west
+                  weight: 30
+          # 二维：环境（当前只 prod；staging/dev 走 chrono-synth.yaml）
+          - list:
+              elements:
+                - env: prod
+
+  template:
+    metadata:
+      name: 'chrono-synth-{{.env}}-{{.region}}'
+      labels:
+        app.kubernetes.io/name: chrono-synth
+        env: '{{.env}}'
+        region: '{{.region}}'
+      annotations:
+        # Route53 weighted-routing reads the weight tag at sync time
+        # (ExternalDNS-managed records pick this up via annotation).
+        external-dns.alpha.kubernetes.io/aws-weight: '{{.weight}}'
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: chrono-synth
+      source:
+        repoURL: https://github.com/wontlost-ltd/chrono-synth-deploy.git
+        targetRevision: main
+        path: 'k8s/overlays/{{.env}}'
+        kustomize:
+          # Per-region patches (ConfigMap region= + ingress hostname).
+          patches:
+            - target:
+                kind: ConfigMap
+                name: chrono-synth-os
+              patch: |
+                - op: add
+                  path: /data/CHRONO_REGION
+                  value: '{{.region}}'
+            - target:
+                kind: Ingress
+                name: chrono-synth
+              patch: |
+                - op: replace
+                  path: /spec/rules/0/host
+                  value: '{{.region}}.api.chrono.example.com'
+
+      destination:
+        name: '{{.cluster}}'
+        namespace: chrono-synth
+
+      syncPolicy:
+        automated:
+          enabled: false  # prod 仍然手动 sync — 与 chrono-synth.yaml 一致
+          prune: false
+          selfHeal: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
+          - ApplyOutOfSyncOnly=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 30s
+            factor: 2
+            maxDuration: 10m
+
+      revisionHistoryLimit: 20
+
+  syncPolicy:
+    applicationsSync: sync
+    preserveResourcesOnDeletion: false

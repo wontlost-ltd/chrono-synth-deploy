@@ -1,0 +1,99 @@
+# AuthorizationPolicies — workload-to-workload allow lists.
+#
+# Default-deny in the namespace, then explicit allow rules for each
+# legitimate edge. This is the application-layer counterpart to the
+# NetworkPolicy default-deny shipped in P0.3.
+
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: default-deny
+  namespace: chrono-synth
+spec:
+  # 空 spec = 拒绝所有流量。后续 ALLOW 规则按 OR 累加。
+  {}
+---
+# 前端 → 后端
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-frontend-to-backend
+  namespace: chrono-synth
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: chrono-synth-os
+      app.kubernetes.io/component: backend
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/chrono-synth/sa/chrono-synth-web
+      to:
+        - operation:
+            methods: [GET, POST, PUT, DELETE, PATCH]
+            paths: ["/api/*", "/healthz", "/readyz"]
+---
+# Ingress gateway → 前端
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-ingress-to-frontend
+  namespace: chrono-synth
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: chrono-synth-web
+      app.kubernetes.io/component: frontend
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/istio-system/sa/istio-ingressgateway-service-account
+---
+# Observability worker → 后端 (拉 metrics + audit)
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-observability-to-backend
+  namespace: chrono-synth
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: chrono-synth-os
+      app.kubernetes.io/component: backend
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            principals:
+              - cluster.local/ns/chrono-synth/sa/observability-worker
+      to:
+        - operation:
+            methods: [GET]
+            paths: ["/metrics", "/metrics/prometheus", "/healthz"]
+---
+# Prometheus (istio-system) → 后端 metrics
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: allow-prometheus-scrape
+  namespace: chrono-synth
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: chrono-synth-os
+      app.kubernetes.io/component: backend
+  action: ALLOW
+  rules:
+    - from:
+        - source:
+            namespaces: [istio-system, chrono-synth]
+            principals:
+              - cluster.local/ns/chrono-synth/sa/prometheus
+      to:
+        - operation:
+            methods: [GET]
+            paths: ["/metrics", "/metrics/prometheus"]

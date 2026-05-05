@@ -1,0 +1,99 @@
+# Istio control plane (P3.1) — deployed via the IstioOperator CR.
+#
+# Install path:
+#   1. Install the Istio operator via istioctl (one-time, per cluster):
+#        istioctl operator init
+#   2. Apply this resource:
+#        kubectl apply -f k8s/addons/istio/istio-operator.yaml
+#
+# This file deliberately uses the operator-driven install rather than
+# istioctl-direct so:
+#   - The control plane is self-healing (operator reconciles drift).
+#   - Upgrades are declarative — bump the `tag` and the operator handles
+#     the rolling control-plane upgrade.
+#   - ArgoCD can manage this CR alongside other addons.
+#
+# Profile: 'default' minus telemetry (Jaeger/Kiali) since we already run
+# Jaeger directly (k8s/base/jaeger/) and don't want two trace pipelines.
+
+apiVersion: install.istio.io/v1alpha1
+kind: IstioOperator
+metadata:
+  name: chrono-synth-istio
+  namespace: istio-system
+spec:
+  profile: default
+  tag: 1.24.2
+  hub: docker.io/istio
+  meshConfig:
+    accessLogFile: /dev/stdout
+    accessLogEncoding: JSON
+    # Trust domain: deliberately not the cluster default. Identifies our
+    # cluster's workloads in cross-cluster mesh traffic (P3.6).
+    trustDomain: chrono-synth.cluster.local
+    defaultConfig:
+      proxyMetadata:
+        # Hold connection up for 5 min before failing health checks;
+        # upstream LB latency under load can exceed istio's default.
+        ISTIO_META_DNS_CAPTURE: "true"
+    # Distributed tracing handed to the existing Jaeger collector.
+    enableTracing: true
+    defaultProviders:
+      tracing: [jaeger]
+    extensionProviders:
+      - name: jaeger
+        zipkin:
+          service: jaeger.chrono-synth.svc.cluster.local
+          port: 9411
+  components:
+    pilot:
+      k8s:
+        resources:
+          requests:
+            cpu: 200m
+            memory: 256Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+        hpaSpec:
+          minReplicas: 2
+          maxReplicas: 5
+          metrics:
+            - type: Resource
+              resource:
+                name: cpu
+                target:
+                  type: Utilization
+                  averageUtilization: 80
+    ingressGateways:
+      - name: istio-ingressgateway
+        enabled: true
+        k8s:
+          service:
+            type: LoadBalancer
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          hpaSpec:
+            minReplicas: 2
+            maxReplicas: 10
+  values:
+    global:
+      proxy:
+        # Sidecar resources — deliberately small; chrono-synth pods are
+        # mostly waiting on LLM upstream and don't push the proxy hard.
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+      # Logs structured JSON for ingestion by the existing observability
+      # pipeline.
+      logging:
+        level: default:info

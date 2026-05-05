@@ -1,0 +1,31 @@
+# Strict mTLS for the chrono-synth namespace.
+#
+# PeerAuthentication scoped to the namespace forces all pod-to-pod
+# traffic to use mTLS via the Istio sidecar. Connections from outside
+# the mesh (e.g. kubectl exec, Prometheus scrapes from the istio-system
+# Prometheus) are rejected unless they come from another mesh-enrolled
+# workload.
+#
+# We label the namespace `istio-injection: enabled` separately so all
+# pods get the sidecar; without injection, this PeerAuthentication has
+# no effect.
+
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: default
+  namespace: chrono-synth
+spec:
+  mtls:
+    mode: STRICT
+---
+# 显式开启 sidecar 注入。Pod 重启后才生效；新部署自动注入。
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: chrono-synth
+  labels:
+    istio-injection: enabled
+    # 保留 P0.3 的 PSA restricted。
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
