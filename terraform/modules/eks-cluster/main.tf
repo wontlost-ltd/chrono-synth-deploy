@@ -67,6 +67,11 @@ resource "aws_kms_alias" "eks" {
   target_key_id = aws_kms_key.eks.key_id
 }
 
+#tfsec:ignore:aws-ec2-no-public-egress-sgr Upstream module's worker-node SG rule
+# allows egress to 0.0.0.0/0 because nodes need to reach the public internet
+# (image pulls, OS updates, AWS API endpoints) via NAT. Cilium / Calico
+# layer-7 policies restrict the actual workload egress; the SG rule here is
+# necessary plumbing.
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "~> 20.31"

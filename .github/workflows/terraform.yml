@@ -63,7 +63,10 @@ jobs:
         uses: aquasecurity/tfsec-action@v1.0.3
         with:
           working_directory: terraform/
-          tfsec_args: --minimum-severity HIGH
+          # exclude-downloaded-modules: 我们消费的 terraform-aws-modules/eks
+          # 等上游模块的安全审计由上游仓库负责，本扫描只对项目自有代码。
+          # 详细理由见 .tfsec/config.yml。
+          tfsec_args: --minimum-severity HIGH --exclude-downloaded-modules
 
   plan:
     name: terraform plan (dev)

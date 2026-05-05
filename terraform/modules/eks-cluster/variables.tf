@@ -46,12 +46,12 @@ variable "node_groups" {
     min_size       = optional(number)
     max_size       = optional(number)
     desired_size   = optional(number)
-    capacity_type  = optional(string)  # 'ON_DEMAND' or 'SPOT'
+    capacity_type  = optional(string) # 'ON_DEMAND' or 'SPOT'
     labels         = optional(map(string), {})
     taints = optional(list(object({
       key    = string
       value  = string
-      effect = string  # 'NO_SCHEDULE' / 'NO_EXECUTE' / 'PREFER_NO_SCHEDULE'
+      effect = string # 'NO_SCHEDULE' / 'NO_EXECUTE' / 'PREFER_NO_SCHEDULE'
     })), [])
   }))
   default = {

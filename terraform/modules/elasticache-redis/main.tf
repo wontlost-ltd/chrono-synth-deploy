@@ -35,8 +35,8 @@ locals {
   )
   resolved_num_cache_clusters = coalesce(var.num_cache_clusters, local.default_num_cache_clusters)
 
-  multi_az = local.resolved_num_cache_clusters > 1
-  automatic_failover = local.multi_az  # ElastiCache requires multi-AZ for auto-failover
+  multi_az           = local.resolved_num_cache_clusters > 1
+  automatic_failover = local.multi_az # ElastiCache requires multi-AZ for auto-failover
 
   snapshot_retention_days = (
     local.is_prod || local.is_staging ? 7 : 1

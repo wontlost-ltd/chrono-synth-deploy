@@ -19,8 +19,8 @@
 #    a Lambda + RDS proxy concern, separate PR.
 
 locals {
-  is_prod              = var.environment == "prod"
-  is_staging           = var.environment == "staging"
+  is_prod    = var.environment == "prod"
+  is_staging = var.environment == "staging"
   default_instance_class = (
     local.is_prod ? "db.r6g.xlarge"
     : local.is_staging ? "db.r6g.large"
@@ -123,14 +123,15 @@ resource "aws_db_instance" "this" {
   auto_minor_version_upgrade = !local.is_prod
 
   # 删除保护 + 终端快照只在 prod 启用；dev/staging 允许快速重建。
-  deletion_protection      = local.is_prod
-  skip_final_snapshot      = !local.is_prod
+  deletion_protection       = local.is_prod
+  skip_final_snapshot       = !local.is_prod
   final_snapshot_identifier = local.is_prod ? "${var.name}-${var.environment}-final" : null
 
   # Enhanced monitoring + Performance Insights for staging/prod.
   monitoring_interval                   = local.is_prod ? 30 : (local.is_staging ? 60 : 0)
   monitoring_role_arn                   = local.is_prod || local.is_staging ? aws_iam_role.monitoring[0].arn : null
   performance_insights_enabled          = local.is_prod || local.is_staging
+  performance_insights_kms_key_id       = local.is_prod || local.is_staging ? var.kms_key_id : null
   performance_insights_retention_period = local.is_prod ? 731 : 7
 
   enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]

@@ -1,0 +1,18 @@
+# tfsec configuration for chrono-synth-deploy.
+#
+# We don't suppress checks lightly; each entry below has a documented
+# rationale. Reviewers verify the rationale still holds when the
+# downstream code changes.
+
+# 抑制对外部模块（terraform-aws-modules/eks）的检查：
+#   - 它们的安全模型由上游仓库审计，我们直接消费。
+#   - 上游 worker-node SG egress 到 0.0.0.0/0 是必要的（节点需要拉
+#     镜像、调用 AWS API、做 OS 更新），由 NAT gateway 兜底；workload
+#     级 egress 限制由 Kyverno/Cilium 在应用层实施。
+exclude_downloaded_modules: true
+
+# 项目内显式排除的具体规则（没有用，全部通过）。
+# 如果未来需要按文件 / 检查 ID 排除，按以下格式：
+#   - aws-foo-bar  # rationale; tracked in <issue/PR>
+exclude:
+  []

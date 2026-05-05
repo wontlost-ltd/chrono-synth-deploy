@@ -30,7 +30,7 @@ resource "aws_s3_bucket" "this" {
 
   # 终止保护：prod 阻止意外销毁。
   lifecycle {
-    prevent_destroy = false  # toggle to true on a per-bucket basis when promoting to prod
+    prevent_destroy = false # toggle to true on a per-bucket basis when promoting to prod
   }
 }
 
@@ -56,7 +56,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "this" {
       sse_algorithm     = "aws:kms"
       kms_master_key_id = var.kms_key_id
     }
-    bucket_key_enabled = true  # Reduces KMS API costs for high-throughput access
+    bucket_key_enabled = true # Reduces KMS API costs for high-throughput access
   }
 }
 
@@ -77,7 +77,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "this" {
     status = "Enabled"
 
     filter {
-      prefix = ""  # apply to all objects
+      prefix = "" # apply to all objects
     }
 
     dynamic "transition" {
