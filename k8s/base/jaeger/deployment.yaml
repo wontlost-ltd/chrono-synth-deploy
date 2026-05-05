@@ -17,9 +17,22 @@ spec:
         app.kubernetes.io/name: jaeger
         app.kubernetes.io/component: tracing
     spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: jaeger
           image: jaegertracing/all-in-one:1.76.0
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
           ports:
             - name: ui
               containerPort: 16686

@@ -27,6 +27,8 @@ spec:
         runAsNonRoot: true
         runAsUser: 1000
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: observability-worker
           image: ghcr.io/wontlost-ltd/chrono-synth-os:latest
@@ -40,6 +42,8 @@ spec:
             readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
           envFrom:
             - configMapRef:
                 name: backend-config

@@ -18,7 +18,12 @@ spec:
         app.kubernetes.io/component: observability
     spec:
       securityContext:
+        runAsNonRoot: true
+        runAsUser: 472
+        runAsGroup: 472
         fsGroup: 472
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: grafana
           image: grafana/grafana:latest
@@ -26,6 +31,12 @@ spec:
             - name: http
               containerPort: 3000
               protocol: TCP
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+            seccompProfile:
+              type: RuntimeDefault
           env:
             - name: GF_SECURITY_ADMIN_USER
               value: admin
