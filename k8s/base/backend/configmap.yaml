@@ -45,3 +45,27 @@ data:
   CHRONO_KMS_PROVIDER: "platform"
   # 对象存储提供方：platform | s3 | gcs | azure_blob | local
   CHRONO_STORAGE_PROVIDER: "platform"
+  # ── P3 Agent / 工具集成层（v067 + v068 migrations） ────────────
+  # WebSearch 工具：provider=mock 时返回模拟数据；exa/serper 等真实 provider 需要 secrets 中配置 API key
+  CHRONO_AGENT_WEB_SEARCH_PROVIDER: "mock"
+  CHRONO_AGENT_WEB_SEARCH_MAX_RESULTS: "10"
+  CHRONO_AGENT_WEB_SEARCH_MAX_CONTENT: "100000"
+  CHRONO_AGENT_WEB_SEARCH_COST_CENTS: "1"
+  # Calendar 工具：provider=mock | google
+  CHRONO_AGENT_CALENDAR_PROVIDER: "mock"
+  CHRONO_AGENT_CALENDAR_DEFAULT_TIMEZONE: "UTC"
+  # Email 工具：provider=mock | gmail；高风险操作 dryRun 默认开启
+  CHRONO_AGENT_EMAIL_PROVIDER: "mock"
+  CHRONO_AGENT_EMAIL_DRY_RUN: "true"
+  CHRONO_AGENT_EMAIL_MAX_ATTACHMENT_BYTES: "26214400"
+  # 工具调用记录留存期（天）；retention worker 按天清理 tool_invocations
+  CHRONO_AGENT_TOOL_INVOCATIONS_RETENTION_DAYS: "90"
+  # Google OAuth redirect URI 必须以 server.publicUrl 为基础
+  CHRONO_AGENT_OAUTH_GOOGLE_REDIRECT_URI: "https://chrono.example.com/api/v1/agent/oauth/google/callback"
+  # ── T0-B AI 安全治理 ──────────────────────────────────────────
+  # 漂移阈值（0–1）；超过 warning 写 audit_log，超过 critical 还会触发 webhook
+  CHRONO_SAFETY_DRIFT_WARNING_THRESHOLD: "0.15"
+  CHRONO_SAFETY_DRIFT_CRITICAL_THRESHOLD: "0.30"
+  # 漂移告警 webhook URL（空字符串禁用网络分发，仅写审计）；secret 在 secrets.yaml
+  CHRONO_SAFETY_ALERTS_WEBHOOK_URL: ""
+  CHRONO_SAFETY_ALERTS_WEBHOOK_TIMEOUT_MS: "5000"
