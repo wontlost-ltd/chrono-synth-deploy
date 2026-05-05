@@ -1,0 +1,155 @@
+name: Terraform
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/terraform.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'terraform/**'
+      - '.github/workflows/terraform.yml'
+
+permissions:
+  contents: read
+  pull-requests: write  # for plan-comment posting
+
+env:
+  TF_VERSION: '1.10.5'  # 与 terraform/modules/*/versions.tf 保持一致
+  TFLINT_VERSION: 'v0.55.0'
+  TFSEC_VERSION: 'v1.28.13'
+
+jobs:
+  fmt-and-lint:
+    name: terraform fmt + tflint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: terraform fmt -check (fail on drift)
+        run: terraform fmt -check -recursive terraform/
+        # The fmt step is non-zero on uncanonical formatting; fix locally
+        # with `terraform fmt -recursive terraform/` and commit.
+
+      - name: Setup tflint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: ${{ env.TFLINT_VERSION }}
+
+      - name: tflint init
+        run: tflint --init
+        working-directory: terraform/
+
+      - name: tflint
+        run: tflint --recursive --format compact
+        working-directory: terraform/
+
+  security-scan:
+    name: tfsec
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: tfsec
+        uses: aquasecurity/tfsec-action@v1.0.3
+        with:
+          working_directory: terraform/
+          tfsec_args: --minimum-severity HIGH
+
+  plan:
+    name: terraform plan (dev)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [fmt-and-lint, security-scan]
+    if: github.event_name == 'pull_request'
+    # plan against dev only on PR; staging+prod plans are dispatched manually
+    # to avoid broad cloud-side reads on every PR (cost + noise).
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write   # OIDC for AWS (no static keys)
+    env:
+      TF_IN_AUTOMATION: 'true'
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Configure AWS credentials (OIDC)
+        # NOTE: skipped when secrets.AWS_TF_ROLE_ARN is unset (e.g. fork PR).
+        # The plan job exits cleanly with a warning rather than failing closed.
+        if: ${{ vars.AWS_TF_ROLE_ARN != '' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_TF_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: terraform init (dev)
+        if: ${{ vars.AWS_TF_ROLE_ARN != '' }}
+        run: terraform init -input=false
+        working-directory: terraform/environments/dev
+
+      - name: terraform validate (dev)
+        if: ${{ vars.AWS_TF_ROLE_ARN != '' }}
+        run: terraform validate -no-color
+        working-directory: terraform/environments/dev
+
+      - name: terraform plan (dev)
+        id: plan
+        if: ${{ vars.AWS_TF_ROLE_ARN != '' }}
+        run: |
+          terraform plan -no-color -out=tfplan -input=false 2>&1 | tee plan.txt
+          echo "exit=$?" >> "$GITHUB_OUTPUT"
+        working-directory: terraform/environments/dev
+        continue-on-error: true
+
+      - name: Skip notice (no AWS role configured)
+        if: ${{ vars.AWS_TF_ROLE_ARN == '' }}
+        run: |
+          echo "::warning::AWS_TF_ROLE_ARN repo variable not set — skipping cloud-side plan."
+          echo "Configure under Settings → Variables to enable plan-on-PR."
+
+      - name: Comment plan on PR
+        if: ${{ vars.AWS_TF_ROLE_ARN != '' && always() }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            let plan = '';
+            try {
+              plan = fs.readFileSync('terraform/environments/dev/plan.txt', 'utf8');
+            } catch (e) {
+              plan = `terraform plan failed before producing output: ${e.message}`;
+            }
+            const truncated = plan.length > 60000
+              ? plan.slice(0, 60000) + '\n\n…(truncated; see workflow logs for full plan)'
+              : plan;
+            const body = [
+              '### Terraform Plan — `dev`',
+              '',
+              '<details><summary>Show plan output</summary>',
+              '',
+              '```',
+              truncated,
+              '```',
+              '',
+              '</details>',
+            ].join('\n');
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body,
+            });
