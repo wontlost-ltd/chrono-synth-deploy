@@ -1,0 +1,127 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chrono-slo-recording-rules
+  namespace: chrono-synth
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/component: slo
+data:
+  recording-rules.yml: |
+    groups:
+      # ─── SLI 1: API availability ─────────────────────────────────
+      - name: chrono.sli.api-availability
+        interval: 30s
+        rules:
+          - record: sli:chrono_api_requests:rate1m
+            expr: sum(rate(chrono_requests_total[1m]))
+          - record: sli:chrono_api_5xx:rate1m
+            expr: |
+              sum(rate(chrono_requests_total{status_code=~"5.."}[1m]))
+          - record: sli:chrono_api_availability:ratio_rate1m
+            expr: |
+              1 - (
+                sli:chrono_api_5xx:rate1m
+                / clamp_min(sli:chrono_api_requests:rate1m, 1)
+              )
+          # 28-day rolling window for SLO reporting
+          - record: sli:chrono_api_availability:ratio_rate28d
+            expr: |
+              1 - (
+                sum(increase(chrono_requests_total{status_code=~"5.."}[28d]))
+                / clamp_min(sum(increase(chrono_requests_total[28d])), 1)
+              )
+
+      # ─── SLI 2: API latency p95 / p99 ───────────────────────────
+      - name: chrono.sli.api-latency
+        interval: 30s
+        rules:
+          - record: sli:chrono_api_duration_seconds:p95_rate5m
+            expr: |
+              histogram_quantile(
+                0.95,
+                sum by (le) (rate(chrono_request_duration_seconds_bucket[5m]))
+              )
+          - record: sli:chrono_api_duration_seconds:p99_rate5m
+            expr: |
+              histogram_quantile(
+                0.99,
+                sum by (le) (rate(chrono_request_duration_seconds_bucket[5m]))
+              )
+
+      # ─── SLI 3: Agent tool success rate ─────────────────────────
+      - name: chrono.sli.agent-tool-success
+        interval: 30s
+        rules:
+          - record: sli:chrono_tool_invocations:rate1m
+            expr: sum(rate(chrono_tool_invocation_outcome_total[1m]))
+          - record: sli:chrono_tool_invocations_success:rate1m
+            expr: |
+              sum(rate(chrono_tool_invocation_outcome_total{outcome="success"}[1m]))
+          - record: sli:chrono_tool_invocations_success:ratio_rate1m
+            expr: |
+              sli:chrono_tool_invocations_success:rate1m
+              / clamp_min(sli:chrono_tool_invocations:rate1m, 1)
+          - record: sli:chrono_tool_invocations_success:ratio_rate28d
+            expr: |
+              sum(increase(chrono_tool_invocation_outcome_total{outcome="success"}[28d]))
+              / clamp_min(sum(increase(chrono_tool_invocation_outcome_total[28d])), 1)
+
+      # ─── SLI 4: Conversation completion rate ────────────────────
+      - name: chrono.sli.conversation-completion
+        interval: 30s
+        rules:
+          - record: sli:chrono_conversation_messages:rate1m
+            expr: sum(rate(chrono_conversation_messages_total[1m]))
+          - record: sli:chrono_conversation_failures:rate1m
+            expr: |
+              sum(rate(chrono_conversation_llm_failures_total[1m]))
+              + sum(rate(chrono_conversation_quota_exceeded_total[1m]))
+          - record: sli:chrono_conversation_success:ratio_rate1m
+            expr: |
+              1 - (
+                sli:chrono_conversation_failures:rate1m
+                / clamp_min(sli:chrono_conversation_messages:rate1m, 1)
+              )
+          - record: sli:chrono_conversation_success:ratio_rate28d
+            expr: |
+              1 - (
+                (
+                  sum(increase(chrono_conversation_llm_failures_total[28d]))
+                  + sum(increase(chrono_conversation_quota_exceeded_total[28d]))
+                )
+                / clamp_min(sum(increase(chrono_conversation_messages_total[28d])), 1)
+              )
+
+      # ─── Error budget burn rate ─────────────────────────────────
+      # SLO targets:
+      #   API availability:        99.9%  → error budget = 0.001
+      #   Agent tool success:      99.5%  → error budget = 0.005
+      #   Conversation completion: 99.95% → error budget = 0.0005
+      # SLO targets:
+      #   API availability:        99.9%  → error budget = 0.001
+      #   Agent tool success:      99.5%  → error budget = 0.005
+      #   Conversation completion: 99.95% → error budget = 0.0005
+      - name: chrono.slo.burn-rate
+        interval: 30s
+        rules:
+          - record: slo:chrono_api_availability:err_rate1h
+            expr: |
+              sum(rate(chrono_requests_total{status_code=~"5.."}[1h]))
+              / clamp_min(sum(rate(chrono_requests_total[1h])), 1)
+          - record: slo:chrono_api_availability:err_rate6h
+            expr: |
+              sum(rate(chrono_requests_total{status_code=~"5.."}[6h]))
+              / clamp_min(sum(rate(chrono_requests_total[6h])), 1)
+          - record: slo:chrono_tool_success:err_rate1h
+            expr: |
+              1 - (
+                sum(rate(chrono_tool_invocation_outcome_total{outcome="success"}[1h]))
+                / clamp_min(sum(rate(chrono_tool_invocation_outcome_total[1h])), 1)
+              )
+          - record: slo:chrono_tool_success:err_rate6h
+            expr: |
+              1 - (
+                sum(rate(chrono_tool_invocation_outcome_total{outcome="success"}[6h]))
+                / clamp_min(sum(rate(chrono_tool_invocation_outcome_total[6h])), 1)
+              )

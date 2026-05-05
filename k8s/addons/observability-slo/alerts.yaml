@@ -1,0 +1,131 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: chrono-slo-alerts
+  namespace: chrono-synth
+  labels:
+    app.kubernetes.io/name: prometheus
+    app.kubernetes.io/component: slo
+data:
+  alerts.yml: |
+    groups:
+      # ─── Multi-window multi-burn-rate alerts (Google SRE workbook) ───
+      # API availability SLO: 99.9% → budget = 0.1%
+      # Page on fast burn: 14.4× over 1h consumes 2% of monthly budget
+      # Ticket on slow burn: 6× over 6h consumes 5% of monthly budget
+      - name: chrono.slo.api-availability
+        rules:
+          - alert: ChronoApiAvailabilitySloFastBurn
+            expr: |
+              slo:chrono_api_availability:err_rate1h > (14.4 * 0.001)
+              and
+              slo:chrono_api_availability:err_rate6h > (14.4 * 0.001)
+            for: 2m
+            labels:
+              severity: critical
+              slo: api-availability
+              page: 'true'
+            annotations:
+              summary: 'API 5xx burn rate >14.4× SLO budget (fast)'
+              description: |
+                The 1h and 6h 5xx error rates exceed the SLO budget by >14.4×.
+                At this rate, the entire 28-day error budget is consumed in <2 days.
+                Immediate investigation required.
+
+                Runbook: docs/operations/slo-runbook.md#api-availability-fast-burn
+
+          - alert: ChronoApiAvailabilitySloSlowBurn
+            expr: |
+              slo:chrono_api_availability:err_rate6h > (6 * 0.001)
+              and
+              slo:chrono_api_availability:err_rate1h > (6 * 0.001)
+            for: 15m
+            labels:
+              severity: warning
+              slo: api-availability
+            annotations:
+              summary: 'API 5xx burn rate >6× SLO budget (slow)'
+              description: |
+                Sustained elevated 5xx rate over 6h. At this rate, the
+                28-day error budget will be exhausted ~halfway through.
+
+                Runbook: docs/operations/slo-runbook.md#api-availability-slow-burn
+
+      # ─── API latency SLO: p95 < 500ms ────────────────────────────
+      - name: chrono.slo.api-latency
+        rules:
+          - alert: ChronoApiLatencyP95High
+            expr: sli:chrono_api_duration_seconds:p95_rate5m > 0.5
+            for: 5m
+            labels:
+              severity: warning
+              slo: api-latency
+            annotations:
+              summary: 'API p95 latency >500ms for 5+ min'
+              description: |
+                Current p95: {{ $value | humanizeDuration }}.
+                Investigate database load, hot routes, downstream timeouts.
+                Runbook: docs/operations/slo-runbook.md#api-latency
+
+          - alert: ChronoApiLatencyP99Critical
+            expr: sli:chrono_api_duration_seconds:p99_rate5m > 2
+            for: 5m
+            labels:
+              severity: critical
+              slo: api-latency
+              page: 'true'
+            annotations:
+              summary: 'API p99 latency >2s for 5+ min'
+              description: |
+                Current p99: {{ $value | humanizeDuration }}.
+                Likely indicates a saturating dependency.
+
+      # ─── Agent tool success SLO: 99.5% ───────────────────────────
+      - name: chrono.slo.agent-tool-success
+        rules:
+          - alert: ChronoToolSuccessSloFastBurn
+            expr: |
+              slo:chrono_tool_success:err_rate1h > (14.4 * 0.005)
+              and
+              slo:chrono_tool_success:err_rate6h > (14.4 * 0.005)
+            for: 2m
+            labels:
+              severity: critical
+              slo: agent-tool-success
+              page: 'true'
+            annotations:
+              summary: 'Agent tool failure burn rate >14.4× SLO budget'
+              description: |
+                Agent tool calls failing at >14.4× the SLO budget.
+                Check upstream provider status (Google / Stripe / etc).
+
+          - alert: ChronoToolSuccessSloSlowBurn
+            expr: |
+              slo:chrono_tool_success:err_rate6h > (6 * 0.005)
+              and
+              slo:chrono_tool_success:err_rate1h > (6 * 0.005)
+            for: 15m
+            labels:
+              severity: warning
+              slo: agent-tool-success
+            annotations:
+              summary: 'Agent tool failure burn rate >6× SLO budget (slow)'
+
+      # ─── Conversation completion SLO: 99.95% ─────────────────────
+      - name: chrono.slo.conversation-completion
+        rules:
+          - alert: ChronoConversationCompletionLow
+            expr: |
+              sli:chrono_conversation_success:ratio_rate1m < 0.99
+              and
+              sli:chrono_conversation_messages:rate1m > 0.1
+            for: 5m
+            labels:
+              severity: warning
+              slo: conversation-completion
+            annotations:
+              summary: 'Conversation completion <99% over 5min'
+              description: |
+                LLM failures + quota exceeded events spiking. Check
+                conversation-circuit-breaker state and intelligence
+                provider status.

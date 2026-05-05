@@ -1,0 +1,174 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "type": "stat",
+      "title": "API availability (28d)",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "targets": [{
+        "expr": "sli:chrono_api_availability:ratio_rate28d",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 0.999},
+              {"color": "green", "value": 0.9995}
+            ]
+          },
+          "decimals": 4,
+          "min": 0.99,
+          "max": 1
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "p95 latency (5m)",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+      "targets": [{
+        "expr": "sli:chrono_api_duration_seconds:p95_rate5m",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 0.5},
+              {"color": "red", "value": 1}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Tool success rate (28d)",
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+      "targets": [{
+        "expr": "sli:chrono_tool_invocations_success:ratio_rate28d",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 0.99},
+              {"color": "green", "value": 0.995}
+            ]
+          },
+          "decimals": 3,
+          "min": 0.95,
+          "max": 1
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Conversation completion (28d)",
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+      "targets": [{
+        "expr": "sli:chrono_conversation_success:ratio_rate28d",
+        "refId": "A"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "red", "value": null},
+              {"color": "yellow", "value": 0.999},
+              {"color": "green", "value": 0.9995}
+            ]
+          },
+          "decimals": 4,
+          "min": 0.995,
+          "max": 1
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "5xx rate (1m / 1h / 6h)",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+      "targets": [
+        {"expr": "sli:chrono_api_5xx:rate1m", "legendFormat": "1m", "refId": "A"},
+        {"expr": "slo:chrono_api_availability:err_rate1h", "legendFormat": "1h err rate", "refId": "B"},
+        {"expr": "slo:chrono_api_availability:err_rate6h", "legendFormat": "6h err rate", "refId": "C"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "reqps"}}
+    },
+    {
+      "type": "timeseries",
+      "title": "Latency p95 / p99 (5m)",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 4},
+      "targets": [
+        {"expr": "sli:chrono_api_duration_seconds:p95_rate5m", "legendFormat": "p95", "refId": "A"},
+        {"expr": "sli:chrono_api_duration_seconds:p99_rate5m", "legendFormat": "p99", "refId": "B"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}}
+    },
+    {
+      "type": "timeseries",
+      "title": "Tool invocation outcomes (1m rate)",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+      "targets": [{
+        "expr": "sum by (outcome) (rate(chrono_tool_invocation_outcome_total[1m]))",
+        "legendFormat": "{{outcome}}",
+        "refId": "A"
+      }],
+      "fieldConfig": {"defaults": {"unit": "reqps"}}
+    },
+    {
+      "type": "timeseries",
+      "title": "Error budget burn — API availability",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 12},
+      "targets": [
+        {"expr": "slo:chrono_api_availability:err_rate1h / 0.001", "legendFormat": "1h burn ×", "refId": "A"},
+        {"expr": "slo:chrono_api_availability:err_rate6h / 0.001", "legendFormat": "6h burn ×", "refId": "B"}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 6},
+              {"color": "red", "value": 14.4}
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 38,
+  "tags": ["chrono", "slo"],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "Chrono SLO",
+  "uid": "chrono-slo",
+  "version": 1,
+  "weekStart": ""
+}

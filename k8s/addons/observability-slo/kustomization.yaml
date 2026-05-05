@@ -1,0 +1,20 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: chrono-synth
+
+resources:
+  - recording-rules.yaml
+  - alerts.yaml
+  - alertmanager.yaml
+
+# Wire-up note (per-overlay):
+# - mount the chrono-slo-recording-rules + chrono-slo-alerts ConfigMaps
+#   into the prometheus deployment under /etc/prometheus/rules/ and
+#   set --rule-files=/etc/prometheus/rules/*.yml
+# - point prometheus --alertmanager.url at http://alertmanager:9093
+# - rotate alertmanager-secrets at deploy time:
+#     kubectl create secret generic alertmanager-secrets \
+#       -n chrono-synth \
+#       --from-literal=SLACK_WEBHOOK_URL='https://hooks.slack.com/services/...' \
+#       --dry-run=client -o yaml | kubectl apply -f -
