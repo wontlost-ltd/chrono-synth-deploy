@@ -1,0 +1,34 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-seccomp-runtime-default
+  annotations:
+    policies.kyverno.io/title: Require seccompProfile=RuntimeDefault
+    policies.kyverno.io/category: Pod Security Standards (Restricted)
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: |
+      seccompProfile=RuntimeDefault drops dangerous syscalls (e.g. ptrace,
+      keyctl) used in container escape exploits. RuntimeDefault is what
+      containerd / CRI-O ship; setting it explicitly removes the implicit
+      "Unconfined" risk.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: seccomp-runtime-default
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      validate:
+        message: Pod or each container must set seccompProfile.type=RuntimeDefault.
+        anyPattern:
+          - spec:
+              securityContext:
+                seccompProfile:
+                  type: RuntimeDefault
+          - spec:
+              containers:
+                - securityContext:
+                    seccompProfile:
+                      type: RuntimeDefault

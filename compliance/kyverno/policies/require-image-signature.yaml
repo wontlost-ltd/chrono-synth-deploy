@@ -1,0 +1,34 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-image-signature
+  annotations:
+    policies.kyverno.io/title: Verify image signatures (sigstore/cosign)
+    policies.kyverno.io/category: Supply Chain
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: |
+      Container images must be signed by a trusted key (chrono-synth release
+      pipeline). Kyverno verifies the signature against the published Rekor
+      transparency log entry before admitting the pod.
+spec:
+  validationFailureAction: Enforce
+  webhookTimeoutSeconds: 30
+  rules:
+    - name: verify-cosign-signature
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              # 仅对自有镜像生效；第三方镜像（postgres / redis / grafana 等）
+              # 由各自上游签名机制保证。
+              namespaces: [chrono-synth, chrono-synth-staging, chrono-synth-prod]
+      verifyImages:
+        - imageReferences:
+            - "ghcr.io/wontlost-ltd/chrono-synth-*:*"
+          attestors:
+            - entries:
+                - keyless:
+                    issuer: https://token.actions.githubusercontent.com
+                    subject: https://github.com/wontlost-ltd/chrono-synth-os/.github/workflows/release.yml@refs/tags/v*
+                    rekor:
+                      url: https://rekor.sigstore.dev

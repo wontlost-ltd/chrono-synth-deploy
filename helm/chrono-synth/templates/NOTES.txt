@@ -1,0 +1,36 @@
+Chrono Synth has been installed.
+
+Release name : {{ .Release.Name }}
+Namespace    : {{ .Values.namespace.name }}
+Chart version: {{ .Chart.Version }}
+App version  : {{ .Chart.AppVersion }}
+
+Next steps:
+
+1. Verify pods are healthy:
+     kubectl -n {{ .Values.namespace.name }} get pods
+
+2. Wait for the readiness probe to pass on backend (/readyz returns 200
+   only when Postgres + Redis are reachable). If it stays NotReady,
+   check that the Secrets exist:
+     kubectl -n {{ .Values.namespace.name }} get secret {{ .Values.externalServices.postgres.secretName }}
+     kubectl -n {{ .Values.namespace.name }} get secret {{ .Values.externalServices.redis.secretName }}
+
+3. {{ if .Values.ingress.enabled -}}
+   Ingress is enabled at:
+   {{- range .Values.ingress.hosts }}
+     https://{{ .host }}
+   {{- end }}
+{{- else -}}
+   Ingress is disabled. Port-forward for a smoke test:
+     kubectl -n {{ .Values.namespace.name }} port-forward svc/{{ include "chrono-synth.fullname" . }}-frontend 8080:8080
+{{- end }}
+
+4. Internal teams should prefer the kustomize layout under k8s/ + ArgoCD
+   (see argocd/applicationsets/chrono-synth.yaml). This Helm chart is the
+   distribution surface for customers who manage their own clusters.
+
+Documentation:
+  - Helm chart    : helm/chrono-synth/README.md
+  - Architecture  : docs/reference-arch-saas.md
+  - SLO runbook   : docs/operations/slo-runbook.md (chrono-synth-os)

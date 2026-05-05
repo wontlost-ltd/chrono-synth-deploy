@@ -1,0 +1,110 @@
+# Default values for chrono-synth Helm chart.
+#
+# Mirror of the kustomize defaults under k8s/base/. Per-environment
+# overrides can be provided via `-f values-prod.yaml` etc., or
+# environment-specific override files in this directory.
+
+namespace:
+  # Most installs let Helm manage the namespace; set createNamespace=false
+  # if your cluster admin pre-provisions it (e.g. via terraform).
+  createNamespace: true
+  name: chrono-synth
+  # PSA labels — match k8s/base/namespace.yaml.
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: latest
+
+backend:
+  image:
+    repository: ghcr.io/wontlost-ltd/chrono-synth-os
+    # Pin a digest or tag at install time; never use 'latest' (Kyverno
+    # policy disallow-image-latest-tag enforces this in compliant clusters).
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicas: 2
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+  env:
+    NODE_ENV: production
+    CHRONO_DB_DRIVER: postgres
+  service:
+    type: ClusterIP
+    port: 3000
+  # 使用 RWO 临时目录；持久数据靠 Postgres + Redis.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    fsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: false  # node_modules + tmp 需要可写
+    capabilities:
+      drop: [ALL]
+    seccompProfile:
+      type: RuntimeDefault
+  livenessProbe:
+    httpGet:
+      path: /healthz
+      port: http
+    initialDelaySeconds: 15
+    periodSeconds: 30
+  readinessProbe:
+    httpGet:
+      path: /readyz
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 10
+
+frontend:
+  image:
+    repository: ghcr.io/wontlost-ltd/chrono-synth-web
+    tag: ""
+    pullPolicy: IfNotPresent
+  replicas: 2
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  service:
+    type: ClusterIP
+    port: 8080
+
+# Bring-your-own database. The chart does not provision Postgres / Redis
+# itself — those are infrastructure concerns owned by terraform-aws-modules
+# (terraform/modules/rds-postgres + elasticache-redis) or operator-supplied.
+externalServices:
+  postgres:
+    # connectionString from a Secret — the chart wires the Secret name
+    # into env via valueFrom.secretKeyRef. Create the Secret separately
+    # (e.g. via External Secrets Operator from AWS Secrets Manager).
+    secretName: chrono-synth-postgres
+    secretKey: connection-string
+  redis:
+    secretName: chrono-synth-redis
+    secretKey: url
+
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: chrono-synth.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+networkPolicy:
+  # Default-deny baseline (P0.3). Disable only if your cluster has a
+  # CNI-level alternative (Cilium GlobalNetworkPolicy etc.).
+  enabled: true

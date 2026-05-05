@@ -1,0 +1,26 @@
+# Apply with `kubectl apply -k compliance/kyverno/policies/`.
+#
+# Order doesn't matter — Kyverno resolves policies independently. Most
+# policies are Enforce; require-readonly-rootfs is Audit until we sweep
+# every workload that legitimately writes to its rootfs (mostly third-
+# party images that don't expect rootfs to be read-only).
+
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+  - disallow-privileged.yaml
+  - require-resource-limits.yaml
+  - disallow-host-namespaces.yaml
+  - require-non-root.yaml
+  - disallow-capabilities.yaml
+  - require-readonly-rootfs.yaml
+  - disallow-latest-tag.yaml
+  - require-seccomp.yaml
+  - disallow-allow-privilege-escalation.yaml
+  - require-network-policy.yaml
+  - require-image-signature.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: chrono-synth-compliance
+  managed-by: kustomize

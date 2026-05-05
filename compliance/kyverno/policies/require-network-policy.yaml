@@ -1,0 +1,36 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-network-policy-per-namespace
+  annotations:
+    policies.kyverno.io/title: Every namespace must have a NetworkPolicy
+    policies.kyverno.io/category: Network Security
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: |
+      Default-deny baseline (P0.3) requires every business namespace to ship
+      a NetworkPolicy. This generate-rule auto-creates a default-deny when
+      a new namespace is created without one.
+spec:
+  background: false
+  rules:
+    - name: generate-default-deny
+      match:
+        any:
+          - resources:
+              kinds: [Namespace]
+      exclude:
+        any:
+          - resources:
+              namespaces: [kube-system, kube-public, kube-node-lease, default, compliance, kyverno]
+      generate:
+        kind: NetworkPolicy
+        apiVersion: networking.k8s.io/v1
+        name: default-deny
+        namespace: "{{request.object.metadata.name}}"
+        synchronize: true
+        data:
+          spec:
+            podSelector: {}
+            policyTypes:
+              - Ingress
+              - Egress

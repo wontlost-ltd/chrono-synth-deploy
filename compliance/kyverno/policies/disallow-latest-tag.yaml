@@ -1,0 +1,29 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-image-latest-tag
+  annotations:
+    policies.kyverno.io/title: Disallow :latest image tags
+    policies.kyverno.io/category: Supply Chain
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: |
+      Image references must pin a digest or specific tag. :latest causes
+      unintentional rollovers and breaks rollback ("which version was
+      :latest yesterday?"). Maps to CIS 5.1.5 + SLSA L1.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: disallow-latest-tag
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      validate:
+        message: Image references must not use the :latest tag (digest or pinned tag required).
+        pattern:
+          spec:
+            containers:
+              - image: "!*:latest"
+            =(initContainers):
+              - image: "!*:latest"

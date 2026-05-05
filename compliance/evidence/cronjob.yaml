@@ -1,0 +1,131 @@
+# Weekly compliance evidence collection.
+#
+# Pulls artefacts that auditors expect:
+#   - kube-bench latest run (CIS scan)
+#   - PolicyReports from Kyverno (which workloads passed/failed)
+#   - Resource inventory (deployment image references + signing status)
+#
+# Uploads as a tarball to the per-tenant evidence S3 bucket. Retention
+# is 7 years per ADR 0010 (audit_log retention).
+#
+# Apply: `kubectl apply -f compliance/evidence/cronjob.yaml`
+# Prereq: an IAM role granted via IRSA with s3:PutObject on the bucket
+# (terraform/modules/s3-storage/ provisions the bucket).
+
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: compliance-evidence
+  namespace: compliance
+  annotations:
+    # Replace with the actual IAM role ARN once provisioned via terraform.
+    eks.amazonaws.com/role-arn: arn:aws:iam::REPLACE_ACCOUNT:role/chrono-synth-compliance-evidence
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: compliance-evidence
+rules:
+  - apiGroups: [""]
+    resources: [pods, namespaces, configmaps]
+    verbs: [get, list]
+  - apiGroups: [apps]
+    resources: [deployments, statefulsets, daemonsets]
+    verbs: [get, list]
+  - apiGroups: [batch]
+    resources: [jobs, cronjobs]
+    verbs: [get, list]
+  - apiGroups: [kyverno.io]
+    resources: [policyreports, clusterpolicyreports]
+    verbs: [get, list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: compliance-evidence
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: compliance-evidence
+subjects:
+  - kind: ServiceAccount
+    name: compliance-evidence
+    namespace: compliance
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: compliance-evidence
+  namespace: compliance
+  annotations:
+    compliance.runbook: docs/operations/compliance-runbook.md#evidence-collection
+spec:
+  # 每周一 02:00 UTC 跑一次；落 staging/prod 各一份。
+  schedule: "0 2 * * 1"
+  successfulJobsHistoryLimit: 4
+  failedJobsHistoryLimit: 7
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      template:
+        spec:
+          serviceAccountName: compliance-evidence
+          restartPolicy: OnFailure
+          containers:
+            - name: collector
+              image: bitnami/kubectl:1.32-debian-12
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -euo pipefail
+                  ts=$(date -u +%Y-%m-%dT%H-%M-%SZ)
+                  tmp=$(mktemp -d)
+
+                  # Resource inventory
+                  kubectl get deploy,sts,ds -A -o json > "$tmp/workloads.json"
+                  kubectl get policyreports -A -o json > "$tmp/policy-reports.json" || true
+                  kubectl get clusterpolicyreports -o json > "$tmp/cluster-policy-reports.json" || true
+                  kubectl get networkpolicies -A -o json > "$tmp/network-policies.json"
+
+                  # Latest kube-bench job log (best-effort; job may not exist yet)
+                  kubectl logs -n compliance job/kube-bench > "$tmp/kube-bench.log" 2>/dev/null || \
+                    echo "(kube-bench job not present — run compliance/kube-bench/job.yaml first)" \
+                      > "$tmp/kube-bench.log"
+
+                  # Pack + upload
+                  out="evidence-$ts.tar.gz"
+                  tar -czf "$out" -C "$tmp" .
+                  echo "Evidence packaged: $(stat -c%s "$out") bytes"
+
+                  # Upload via aws-cli (sidecar-supplied IRSA token).
+                  # Bucket name passed via env to avoid hardcoding.
+                  if [ -n "${EVIDENCE_BUCKET:-}" ]; then
+                    aws s3 cp "$out" "s3://${EVIDENCE_BUCKET}/$(date +%Y/%m)/$out"
+                    echo "Uploaded to s3://${EVIDENCE_BUCKET}/$(date +%Y/%m)/$out"
+                  else
+                    echo "::warning::EVIDENCE_BUCKET unset — skipping upload"
+                  fi
+              env:
+                - name: EVIDENCE_BUCKET
+                  valueFrom:
+                    configMapKeyRef:
+                      name: compliance-config
+                      key: evidence_bucket
+                      optional: true
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                runAsUser: 1000
+                capabilities:
+                  drop: [ALL]
+                seccompProfile:
+                  type: RuntimeDefault

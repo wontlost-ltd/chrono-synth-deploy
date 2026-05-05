@@ -1,0 +1,28 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-readonly-root-filesystem
+  annotations:
+    policies.kyverno.io/title: Read-only root filesystem
+    policies.kyverno.io/category: Pod Security Standards (Restricted)
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: |
+      Writable rootfs lets a compromised process persist by dropping a binary.
+      Mount writable scratch via emptyDir / persistentVolumeClaim explicitly
+      where the workload genuinely needs it.
+spec:
+  validationFailureAction: Audit  # 渐进；先 audit 收集违规，再切 Enforce
+  background: true
+  rules:
+    - name: readonly-rootfs
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      validate:
+        message: Containers must set securityContext.readOnlyRootFilesystem=true.
+        pattern:
+          spec:
+            containers:
+              - securityContext:
+                  readOnlyRootFilesystem: "true"

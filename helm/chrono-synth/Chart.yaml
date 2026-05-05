@@ -1,0 +1,29 @@
+apiVersion: v2
+name: chrono-synth
+description: |
+  Helm chart for the Chrono Synth platform. Parallels the kustomize-based
+  deployment under `k8s/`. Customers who prefer Helm distribution can
+  install via `helm install`; internal deployments continue using
+  ArgoCD + kustomize.
+
+# 应用版本独立于图表版本演进。bumping 时遵循：
+#   - chart 修改 → 升 chart `version`
+#   - 应用代码升级 → 升 `appVersion`
+type: application
+version: 0.1.0
+appVersion: "2.0.0"
+
+home: https://github.com/wontlost-ltd/chrono-synth-deploy
+sources:
+  - https://github.com/wontlost-ltd/chrono-synth-os
+  - https://github.com/wontlost-ltd/chrono-synth-web
+  - https://github.com/wontlost-ltd/chrono-synth-deploy
+
+maintainers:
+  - name: Chrono Synth Platform
+    url: https://github.com/wontlost-ltd
+
+annotations:
+  # 与 ArgoCD ApplicationSet 共存：客户走 Helm，内部走 kustomize。
+  category: Application
+  licenses: AGPL-3.0

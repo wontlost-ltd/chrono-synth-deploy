@@ -1,0 +1,42 @@
+{{- if .Values.networkPolicy.enabled -}}
+# Default-deny baseline mirrors k8s/base/network-policy.yaml.
+# Helm-time toggle: set networkPolicy.enabled=false when the cluster
+# already enforces a CNI-level alternative (Cilium, Calico).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "chrono-synth.fullname" . }}-default-deny
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "chrono-synth.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "chrono-synth.fullname" . }}-allow-dns-egress
+  namespace: {{ .Values.namespace.name }}
+  labels:
+    {{- include "chrono-synth.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+{{- end }}

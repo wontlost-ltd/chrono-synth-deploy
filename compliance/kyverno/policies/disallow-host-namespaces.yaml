@@ -1,0 +1,32 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-host-namespaces
+  annotations:
+    policies.kyverno.io/title: Disallow hostNetwork / hostPID / hostIPC
+    policies.kyverno.io/category: Pod Security Standards (Restricted)
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: |
+      Sharing host namespaces gives a pod broad visibility into the node's
+      processes, network stack, and IPC. Used legitimately only by chaos /
+      compliance tools (kube-bench), which run in dedicated namespaces.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: host-namespaces
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          - resources:
+              namespaces: [compliance, kube-system]
+      validate:
+        message: hostNetwork / hostPID / hostIPC must all be false.
+        pattern:
+          spec:
+            =(hostNetwork): "false"
+            =(hostPID): "false"
+            =(hostIPC): "false"

@@ -1,0 +1,31 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-allow-privilege-escalation
+  annotations:
+    policies.kyverno.io/title: Disallow allowPrivilegeEscalation
+    policies.kyverno.io/category: Pod Security Standards (Restricted)
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: |
+      allowPrivilegeEscalation=true permits a process to gain more privileges
+      than its parent (typically via setuid binaries). Restricted pods must
+      pin this to false.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: no-privilege-escalation
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      validate:
+        message: Containers must set securityContext.allowPrivilegeEscalation=false.
+        pattern:
+          spec:
+            =(initContainers):
+              - securityContext:
+                  allowPrivilegeEscalation: "false"
+            containers:
+              - securityContext:
+                  allowPrivilegeEscalation: "false"
