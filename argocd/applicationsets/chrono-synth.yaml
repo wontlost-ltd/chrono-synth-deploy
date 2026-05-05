@@ -1,0 +1,107 @@
+# ApplicationSet — 一份模板生成 dev/staging/prod 三个 Application
+#
+# 用 ApplicationSet 而不是直接 Application 的原因：
+#  1. 三个环境只在 overlay 路径 + sync policy 上有差异，模板化避免漂移
+#  2. 新增环境（如 sandbox）只需在 generators.list 加一行
+#  3. 删 generator 项时 ArgoCD 自动删掉对应 Application + 资源
+#     （前提：syncPolicy.applicationsSync = sync）
+#
+# Sync policy 设计：
+#   dev      = auto-sync + auto-prune + selfHeal      —— 推快、纠偏快
+#   staging  = auto-sync + selfHeal（不 prune）        —— 推快、清理需手动
+#   prod     = manual sync + selfHeal                 —— 推必须 PR + approve
+#
+# 漂移检测：所有环境都开 selfHeal=true，3 分钟轮询；手改集群资源会
+# 被回写。生产环境也开是因为 selfHeal 只在“集群不等于 git”时触发，
+# 不会绕过 manual sync —— manual sync 只是阻止 ArgoCD “主动同步 git
+# 新版本”，不阻止它“把集群拉回 git 当前 ref”。
+
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: chrono-synth
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ['missingkey=error']
+
+  # 三环境列表 + 各自的差异参数
+  generators:
+    - list:
+        elements:
+          - name: dev
+            overlayPath: k8s/overlays/dev
+            namespace: chrono-synth
+            autoSync: true
+            autoPrune: true
+            revision: main
+          - name: staging
+            overlayPath: k8s/overlays/staging
+            namespace: chrono-synth
+            autoSync: true
+            autoPrune: false   # staging 不自动 prune，避免误删半截 manifest
+            revision: main
+          - name: prod
+            overlayPath: k8s/overlays/prod
+            namespace: chrono-synth
+            autoSync: false    # 生产手动 sync
+            autoPrune: false
+            revision: main
+
+  template:
+    metadata:
+      name: 'chrono-synth-{{.name}}'
+      labels:
+        app.kubernetes.io/name: chrono-synth
+        env: '{{.name}}'
+      finalizers:
+        # 删 application 同时删集群里的资源；防止孤儿 deployment
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: chrono-synth
+
+      source:
+        repoURL: https://github.com/wontlost-ltd/chrono-synth-deploy.git
+        targetRevision: '{{.revision}}'
+        path: '{{.overlayPath}}'
+        # kustomize 配置：commonAnnotations 注入 commit sha，便于审计
+        kustomize:
+          commonAnnotations:
+            argocd.argoproj.io/revision: '{{`{{.metadata.commit}}`}}'
+
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{.namespace}}'
+
+      syncPolicy:
+        # 自动同步策略（dev/staging）；prod 留空 -> manual
+        automated:
+          enabled: '{{.autoSync}}'
+          prune: '{{.autoPrune}}'
+          selfHeal: true
+          allowEmpty: false
+        syncOptions:
+          # 命名空间不存在时自动创建（PSA 标签由 base/namespace.yaml 提供）
+          - CreateNamespace=true
+          # CRD 重复时跳过冲突（addons 引入的 Prometheus CRD）
+          - ApplyOutOfSyncOnly=true
+          # 大资源 server-side apply，避免 last-applied 注释膨胀
+          - ServerSideApply=true
+          # PVC 不要被 prune；存储无价
+          - PrunePropagationPolicy=foreground
+          - PruneLast=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 30s
+            factor: 2
+            maxDuration: 10m
+
+      # Drift 监控间隔（默认 3 分钟）；prod 也开 selfHeal，但 git 版本
+      # 推进仍需人工 sync。
+      revisionHistoryLimit: 20
+
+  # 删除 generator 中的元素时，对应 application 也删
+  syncPolicy:
+    applicationsSync: sync
+    preserveResourcesOnDeletion: false

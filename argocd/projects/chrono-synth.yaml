@@ -1,0 +1,130 @@
+# ArgoCD AppProject — 把 chrono-synth 部署收敛在一个项目里
+#
+# AppProject 是 ArgoCD 的多租户边界：限制源仓库、目标命名空间、能用的
+# K8s 资源类型。即便有人误配 Application，project 兜住越权风险。
+#
+# 设计选择：
+#  1. 一个 project 跨三个环境（dev/staging/prod）。环境隔离由
+#     destinationNamespace + cluster 组合实现，不再叠 project。
+#  2. sourceRepos 显式列两个仓：业务清单（chrono-synth-deploy）+
+#     observability/SLO addon（同仓 addons/）。其他仓被拒绝。
+#  3. clusterResourceWhitelist 只放 Namespace / ClusterRole 等少量
+#     必需 cluster-scoped 资源；CRD 不放，避免误装运营外的 operator。
+#  4. orphanedResources.warn=true：开发者删了 manifest 但忘清集群里
+#     的资源时，ArgoCD UI 高亮提醒，不直接 prune。
+
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: chrono-synth
+  namespace: argocd
+  finalizers:
+    # 删除 project 前先级联回收 application，避免孤儿 app 残留
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: Chrono Synth platform — backend, frontend, observability, SLO addons
+
+  sourceRepos:
+    - https://github.com/wontlost-ltd/chrono-synth-deploy.git
+    # 紧急情况下允许临时切换分支；正常流程仍走 main
+    - https://github.com/wontlost-ltd/chrono-synth-deploy
+
+  destinations:
+    - namespace: chrono-synth
+      server: https://kubernetes.default.svc
+      name: in-cluster
+    - namespace: chrono-synth-*
+      server: https://kubernetes.default.svc
+      name: in-cluster
+    # 多集群联邦时再加 server URL；当前单集群留位
+    # - namespace: chrono-synth
+    #   server: https://prod-k8s.example.com
+    #   name: prod-cluster
+
+  clusterResourceWhitelist:
+    - group: ''
+      kind: Namespace
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRole
+    - group: rbac.authorization.k8s.io
+      kind: ClusterRoleBinding
+    # PodSecurityAdmission 标签写在 Namespace 上，无需额外资源
+    - group: networking.k8s.io
+      kind: NetworkPolicy
+    - group: policy
+      kind: PodDisruptionBudget
+    - group: scheduling.k8s.io
+      kind: PriorityClass
+
+  namespaceResourceWhitelist:
+    - group: ''
+      kind: Service
+    - group: ''
+      kind: ConfigMap
+    - group: ''
+      kind: Secret
+    - group: ''
+      kind: ServiceAccount
+    - group: ''
+      kind: PersistentVolumeClaim
+    - group: ''
+      kind: Pod
+    - group: apps
+      kind: Deployment
+    - group: apps
+      kind: StatefulSet
+    - group: apps
+      kind: DaemonSet
+    - group: batch
+      kind: Job
+    - group: batch
+      kind: CronJob
+    - group: networking.k8s.io
+      kind: Ingress
+    - group: networking.k8s.io
+      kind: NetworkPolicy
+    - group: autoscaling
+      kind: HorizontalPodAutoscaler
+    - group: policy
+      kind: PodDisruptionBudget
+    - group: monitoring.coreos.com
+      kind: ServiceMonitor
+    - group: monitoring.coreos.com
+      kind: PodMonitor
+    - group: monitoring.coreos.com
+      kind: PrometheusRule
+
+  # 危险资源黑名单：即便 namespaceResourceWhitelist 漏列，这些也禁用
+  namespaceResourceBlacklist:
+    - group: ''
+      kind: ResourceQuota
+    - group: ''
+      kind: LimitRange
+
+  orphanedResources:
+    warn: true
+    # 系统级 ServiceAccount 等不计入 orphaned
+    ignore:
+      - group: ''
+        kind: ServiceAccount
+        name: default
+
+  # 谁可以创建本 project 下的 application（GitHub team 映射在 rbac-cm）
+  roles:
+    - name: deployer
+      description: Sync chrono-synth applications, but not delete or modify project
+      policies:
+        - p, proj:chrono-synth:deployer, applications, get, chrono-synth/*, allow
+        - p, proj:chrono-synth:deployer, applications, sync, chrono-synth/*, allow
+      groups:
+        - wontlost-ltd:engineering
+
+  # 同步窗口：周末禁止生产发布（时区按 cluster 默认 UTC，自行换算）
+  syncWindows:
+    - kind: deny
+      schedule: '0 0 * * 6'   # 周六 00:00 UTC 起
+      duration: 48h
+      applications:
+        - 'chrono-synth-prod'
+      manualSync: true        # 紧急情况下仍可手动覆盖
+      timeZone: UTC

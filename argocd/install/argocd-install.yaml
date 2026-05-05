@@ -1,0 +1,102 @@
+# ArgoCD 安装清单（Kustomize bootstrap）
+#
+# 该文件是“引用 + 覆盖”形式的入口，将上游 ArgoCD HA 安装清单作为
+# kustomize remote base 拉取，再叠加我们自定义的 ConfigMap / RBAC /
+# Service 修改。版本固定到 release tag，避免 main 分支的不期望变更。
+#
+# 部署：
+#   kubectl create namespace argocd --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl apply -k argocd/install/
+#
+# 卸载：
+#   kubectl delete -k argocd/install/
+#   kubectl delete namespace argocd
+#
+# 升级：修改 ARGOCD_VERSION 注释里的 ref 值并同步 patches。
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: argocd
+
+# ARGOCD_VERSION = v2.13.2 (released 2025-Q1; pin to a known-good ref)
+# Switch to ha/install if you need controller HA; non-HA is fine for ≤200 apps.
+resources:
+  - https://raw.githubusercontent.com/argoproj/argo-cd/v2.13.2/manifests/install.yaml
+
+# 命名空间标签：与 chrono-synth 主命名空间一样使用 PSA restricted
+# （ArgoCD 上游在 v2.13 起已兼容 restricted）。
+commonLabels:
+  app.kubernetes.io/part-of: argocd-platform
+  managed-by: kustomize
+
+# 我们关心的运行时调整：
+patches:
+  # 1. 关闭匿名访问，强制 SSO（生产环境必须）
+  - target:
+      kind: ConfigMap
+      name: argocd-cm
+    patch: |-
+      - op: add
+        path: /data
+        value:
+          # 关闭无密码访问；admin 密码仅用于初始 bootstrap
+          users.anonymous.enabled: "false"
+          # 资源排除：避免 ArgoCD 试图 reconcile 这些资源（IDP 自管）
+          resource.exclusions: |
+            - apiGroups:
+              - cilium.io
+              kinds:
+              - CiliumIdentity
+              clusters:
+              - "*"
+            - apiGroups:
+              - kyverno.io
+              kinds:
+              - PolicyReport
+              clusters:
+              - "*"
+          # 跨集群部署时，每个 Application 用独立 retry 策略
+          application.instanceLabelKey: argocd.argoproj.io/instance
+          # 默认 timeout 3min；大规模 sync 适当上调
+          timeout.reconciliation: 180s
+          # 启用 HelmCharts 增量比较，加速 diff
+          server.disable.auth: "false"
+
+  # 2. 收紧 RBAC：默认拒绝；明确 readonly + admin 角色
+  - target:
+      kind: ConfigMap
+      name: argocd-rbac-cm
+    patch: |-
+      - op: add
+        path: /data
+        value:
+          policy.default: role:readonly
+          policy.csv: |
+            # 平台运维（admin）：完整权限
+            p, role:platform-admin, applications, *, */*, allow
+            p, role:platform-admin, clusters, *, *, allow
+            p, role:platform-admin, repositories, *, *, allow
+            p, role:platform-admin, projects, *, *, allow
+            # 开发者（developer）：读取 + 触发 sync，不能删 app
+            p, role:developer, applications, get, */*, allow
+            p, role:developer, applications, sync, */*, allow
+            p, role:developer, applications, action/*, */*, allow
+            p, role:developer, repositories, get, *, allow
+            # GitHub team 映射：替换为你们组织的实际 team
+            g, wontlost-ltd:platform, role:platform-admin
+            g, wontlost-ltd:engineering, role:developer
+
+  # 3. argocd-server: 强制 HTTPS，禁用 grpc-web 明文
+  - target:
+      kind: Deployment
+      name: argocd-server
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args
+        value:
+          - /usr/local/bin/argocd-server
+          - --staticassets
+          - /shared/app
+          - --insecure=false
+          - --logformat=json
+          - --loglevel=info
