@@ -1,0 +1,25 @@
+# Chaos experiments group — apply with `kubectl apply -k chaos/experiments/`
+#
+# 默认所有实验都不立即触发（spec.scheduler 有 cron，spec.duration 短）。
+# 演练时手动 dispatch 单个实验：
+#   kubectl annotate podchaos backend-pod-kill -n chrono-synth chaos.alpha.kubernetes.io/dispatch=true
+#
+# 列表：
+#  - pod-kill-backend.yaml          每 4 小时随机 kill 一个 backend pod，5s
+#  - network-partition-postgres.yaml backend↔postgres 网络分区，60s
+#  - dns-failure-llm-upstream.yaml  api.openai.com / api.anthropic.com DNS 解析失败，60s
+#
+# 仅在 staging 启用；prod chaos 演练 SLO 团队提前公告。
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: chrono-synth
+
+resources:
+  - pod-kill-backend.yaml
+  - network-partition-postgres.yaml
+  - dns-failure-llm-upstream.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: chaos-engineering
+  managed-by: chaos-mesh

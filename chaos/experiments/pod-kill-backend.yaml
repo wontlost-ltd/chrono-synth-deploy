@@ -1,0 +1,30 @@
+# 随机 kill backend pod
+#
+# 目的：验证 K8s 自愈 + HPA 在单 pod 故障下的恢复能力。期望 RTO < 60s
+# （另一个副本在 healthcheck 超时前已接管，service mesh 的 readiness
+# probe 立即把故障 pod 移出 endpoints）。
+#
+# 触发：`kubectl apply -k chaos/experiments/`，或 chaos-mesh dashboard
+# 手动 dispatch。每月例行演练（自动化 cron 见 chaos/schedules/monthly.yaml）。
+#
+# 验收：
+#   - 演练期间 sli:chrono_api_availability:ratio_rate28d 不应跌破 99.9%
+#   - 5xx 突峰持续时间 < 30s（对应 1m alert 阈值）
+#   - 漂移分析、对话提交 SLO 不受影响
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: backend-pod-kill
+  namespace: chrono-synth
+  annotations:
+    chaos.runbook: docs/operations/disaster-recovery-runbook.md#pod-kill-drill
+spec:
+  action: pod-kill
+  mode: one
+  selector:
+    namespaces: [chrono-synth]
+    labelSelectors:
+      app.kubernetes.io/name: backend
+  scheduler:
+    cron: "0 */4 * * *"  # 每 4 小时一次（演练期间），平时停用
+  duration: "5s"

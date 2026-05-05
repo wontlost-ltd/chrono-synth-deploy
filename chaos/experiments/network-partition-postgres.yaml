@@ -1,0 +1,38 @@
+# 模拟 backend ↔ postgres 网络分区
+#
+# 目的：验证 backend 在 DB 不可达时的降级行为。期望：
+#  - 健康检查 /readyz 立即返回 503（驱动层探活）
+#  - K8s 把 pod 从 service endpoints 中摘除
+#  - HPA / cluster autoscaler 不会为此扩容（因为是 DB 故障，不是负载）
+#  - 客户端收到清晰的 503 + Retry-After 而非超时
+#
+# 触发：`kubectl apply -f chaos/experiments/network-partition-postgres.yaml`。
+# 仅在 staging 跑；prod chaos 演练需提前 24h 公告。
+#
+# 验收：
+#  - 分区结束后 1 分钟内全部 backend pod 重新 ready
+#  - audit_log 在分区期间应该有 "db_unreachable" 事件（启动期失败）
+#  - chrono_request_duration_seconds p99 在分区期间不显著膨胀
+#    （快速失败优于慢速重试）
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: postgres-partition
+  namespace: chrono-synth
+  annotations:
+    chaos.runbook: docs/operations/disaster-recovery-runbook.md#db-partition-drill
+spec:
+  action: partition
+  mode: all
+  selector:
+    namespaces: [chrono-synth]
+    labelSelectors:
+      app.kubernetes.io/name: backend
+  direction: to
+  target:
+    mode: all
+    selector:
+      namespaces: [chrono-synth]
+      labelSelectors:
+        app.kubernetes.io/name: postgres
+  duration: "60s"

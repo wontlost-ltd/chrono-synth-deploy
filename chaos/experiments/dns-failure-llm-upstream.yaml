@@ -1,0 +1,33 @@
+# 模拟 LLM upstream 域名 DNS 解析失败
+#
+# 目的：验证 LLM provider 不可达时的降级路径。conversation pipeline
+# 应当：
+#  - 不让单次 LLM 故障升级为整体可用性故障（5xx 应当被 4xx-class 替代）
+#  - chrono_conversation_quota_exceeded_total 计数器升高，clients
+#    收到清晰的 503 with Retry-After
+#  - circuit breaker 在连续失败 N 次后跳闸，避免重试风暴
+#
+# 触发条件：仅在 staging 演练。prod 误触会真的让用户对话失败。
+#
+# 验收：
+#  - DNS 故障期间，对话端点 5xx rate 不超过 0.5%（4xx 无界限）
+#  - 演练结束后 2 分钟内自动恢复，无需人工干预
+#  - SLO burn alert 不应触发（因为故障本身被分类为 4xx）
+apiVersion: chaos-mesh.org/v1alpha1
+kind: DNSChaos
+metadata:
+  name: llm-upstream-dns-failure
+  namespace: chrono-synth
+  annotations:
+    chaos.runbook: docs/operations/disaster-recovery-runbook.md#llm-dns-drill
+spec:
+  action: error
+  mode: all
+  selector:
+    namespaces: [chrono-synth]
+    labelSelectors:
+      app.kubernetes.io/name: backend
+  patterns:
+    - api.openai.com
+    - api.anthropic.com
+  duration: "60s"
