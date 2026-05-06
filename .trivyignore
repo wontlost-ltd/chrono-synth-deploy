@@ -1,0 +1,11 @@
+# Trivy misconfiguration ignores for chrono-synth-deploy.
+#
+# Each entry is a finding ID followed by a rationale. Reviewers should
+# verify the rationale still applies when downstream code changes.
+
+# AWS-0104: terraform-aws-modules/eks/aws worker-node security group
+# egress 0.0.0.0/0. Necessary because nodes must reach the public
+# internet for image pulls, AWS API endpoints, and OS updates via the
+# NAT gateway. Workload-level egress restrictions are enforced by
+# Kyverno + Cilium at the pod layer; the SG rule is plumbing.
+AVD-AWS-0104

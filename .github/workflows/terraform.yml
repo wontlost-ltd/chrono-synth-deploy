@@ -18,8 +18,8 @@ permissions:
 
 env:
   TF_VERSION: '1.10.5'  # 与 terraform/modules/*/versions.tf 保持一致
-  TFLINT_VERSION: 'v0.55.0'
-  TFSEC_VERSION: 'v1.28.13'
+  TFLINT_VERSION: 'v0.62.0'
+  TRIVY_VERSION: '0.67.0'
 
 jobs:
   fmt-and-lint:
@@ -53,22 +53,24 @@ jobs:
         working-directory: terraform/
 
   security-scan:
-    name: tfsec
+    name: trivy config scan
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
 
-      - name: tfsec
-        uses: aquasecurity/tfsec-action@v1.0.3
+      # tfsec is in maintenance mode; aquasecurity is consolidating into
+      # trivy. Migrated 2026-05; .trivyignore documents accepted upstream
+      # module exceptions (analogous to the previous .tfsec/config.yml).
+      - name: trivy config scan
+        uses: aquasecurity/trivy-action@0.30.0
         with:
-          working_directory: terraform/
-          # additional_args is the correct input name (tfsec_args was
-          # silently ignored, leaving the upstream-module CRITICAL leak).
-          # exclude-downloaded-modules: 我们消费的 terraform-aws-modules/eks
-          # 等上游模块的安全审计由上游仓库负责，本扫描只对项目自有代码。
-          # 详细理由见 .tfsec/config.yml。
-          additional_args: --minimum-severity HIGH --exclude-downloaded-modules
+          scan-type: 'config'
+          scan-ref: 'terraform/'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+          ignore-unfixed: true
+          trivyignores: '.trivyignore'
 
   plan:
     name: terraform plan (dev)
