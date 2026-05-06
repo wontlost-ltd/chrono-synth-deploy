@@ -18,3 +18,14 @@ env/*.env
 .vscode/
 **/.DS_Store
 *.iml
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+!*.tfvars.example
+# .terraform.lock.hcl: ignore for module dirs (ephemeral, created by
+# `terraform init -backend=false` during local validation). Environment
+# composition roots check theirs in for canonical provider pinning.
+terraform/modules/**/.terraform.lock.hcl

@@ -23,6 +23,11 @@ variable "evidence_bucket_arn" {
   type        = string
 }
 
+variable "evidence_bucket_kms_key_arn" {
+  description = "ARN of the KMS key encrypting the evidence bucket. Used to scope the IAM policy to a specific key (no wildcards)."
+  type        = string
+}
+
 variable "oidc_provider_arn" {
   description = "EKS OIDC provider ARN. Output from terraform/modules/eks-cluster.oidc_provider_arn."
   type        = string

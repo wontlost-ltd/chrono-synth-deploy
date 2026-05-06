@@ -140,8 +140,9 @@ module "compliance_evidence" {
   name        = local.name
   environment = local.environment
 
-  evidence_bucket_name = module.s3_compliance_evidence.bucket_name
-  evidence_bucket_arn  = module.s3_compliance_evidence.bucket_arn
+  evidence_bucket_name        = module.s3_compliance_evidence.bucket_name
+  evidence_bucket_arn         = module.s3_compliance_evidence.bucket_arn
+  evidence_bucket_kms_key_arn = module.kms_app_data.key_arn
 
   oidc_provider_arn = module.eks.oidc_provider_arn
   # OIDC issuer URL output is the full https:// URL; trim the prefix

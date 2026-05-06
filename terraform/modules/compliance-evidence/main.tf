@@ -81,16 +81,15 @@ resource "aws_iam_role_policy" "evidence_kms" {
   role = aws_iam_role.evidence.id
 
   # SSE-KMS bucket: principals must hold GenerateDataKey on the bucket's
-  # KMS key to PutObject. Wildcard-resource is intentional — the bucket
-  # could rotate to a different key over its lifetime; the bucket policy
-  # restricts the actual surface.
+  # KMS key to PutObject. Resource scoped to the actual key ARN (no
+  # wildcards) — tfsec aws-iam-no-policy-wildcards.
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
       Sid      = "EncryptUploads"
       Effect   = "Allow"
       Action   = ["kms:GenerateDataKey", "kms:Encrypt"]
-      Resource = "*"
+      Resource = var.evidence_bucket_kms_key_arn
     }]
   })
 }
