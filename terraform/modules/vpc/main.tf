@@ -1,4 +1,4 @@
-# VPC module — wraps terraform-aws-modules/vpc/aws v5.x with chrono-synth defaults.
+# VPC module — wraps terraform-aws-modules/vpc/aws v6.x with chrono-synth defaults.
 #
 # Topology per environment:
 #   dev      → 3 AZs, 1 NAT gateway (cost-optimised)
@@ -34,7 +34,7 @@ locals {
 
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 5.13"
+  version = "~> 6.6"
 
   name = "${var.name}-${var.environment}"
   cidr = var.cidr_block

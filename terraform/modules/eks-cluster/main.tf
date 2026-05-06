@@ -1,4 +1,4 @@
-# EKS cluster module — thin wrapper around terraform-aws-modules/eks/aws v20.
+# EKS cluster module — thin wrapper around terraform-aws-modules/eks/aws v21.
 #
 # Why wrap and not pull the upstream directly:
 #   - Per-env sizing defaults that callers should rarely have to think
@@ -74,34 +74,37 @@ resource "aws_kms_alias" "eks" {
 # necessary plumbing.
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "~> 20.31"
+  version = "~> 21.19"
 
-  cluster_name    = "${var.name}-${var.environment}"
-  cluster_version = var.cluster_version
+  # v21 stripped the cluster_* prefix from most inputs to match the EKS API.
+  # See docs/UPGRADE-21.0.md.
+  name               = "${var.name}-${var.environment}"
+  kubernetes_version = var.cluster_version
 
   vpc_id     = var.vpc_id
   subnet_ids = var.subnet_ids
 
-  cluster_endpoint_public_access       = var.endpoint_public_access
-  cluster_endpoint_public_access_cidrs = var.endpoint_public_access_cidrs
-  cluster_endpoint_private_access      = true
+  endpoint_public_access       = var.endpoint_public_access
+  endpoint_public_access_cidrs = var.endpoint_public_access_cidrs
+  endpoint_private_access      = true
 
   # Encrypt Kubernetes Secrets at rest with our CMK.
-  cluster_encryption_config = {
+  encryption_config = {
     provider_key_arn = aws_kms_key.eks.arn
     resources        = ["secrets"]
   }
 
   # Send all available control-plane log types to CloudWatch.
   # Retention 30d in dev/staging, 90d in prod.
-  cluster_enabled_log_types              = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
+  enabled_log_types                      = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
   cloudwatch_log_group_retention_in_days = local.is_prod ? 90 : 30
 
-  # IRSA for in-cluster service accounts to assume IAM roles.
-  enable_irsa = true
+  # v21 removed the enable_irsa flag — IRSA is always-on, paired with the new
+  # dual-stack oidc-eks issuer URL.
 
-  # Default add-ons; pin versions implicitly via the module's catalog.
-  cluster_addons = {
+  # Default add-ons; v21 defaults `most_recent = true` so the explicit setting
+  # is now redundant but kept for readability.
+  addons = {
     coredns = {
       most_recent = true
     }
@@ -136,6 +139,15 @@ module "eks" {
 
       # Disk: GP3 at 100 GB; pods using emptyDir / overlay need it.
       disk_size = 100
+
+      # IMDSv2 required (token-based). v21 lowered the default hop limit to 1;
+      # we keep that and explicitly require tokens to satisfy
+      # tfsec aws-ec2-no-default-imds-token.
+      metadata_options = {
+        http_endpoint               = "enabled"
+        http_tokens                 = "required"
+        http_put_response_hop_limit = 1
+      }
     }
   }
 
