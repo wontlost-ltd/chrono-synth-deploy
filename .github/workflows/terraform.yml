@@ -63,7 +63,7 @@ jobs:
       # trivy. Migrated 2026-05; .trivyignore documents accepted upstream
       # module exceptions (analogous to the previous .tfsec/config.yml).
       - name: trivy config scan
-        uses: aquasecurity/trivy-action@0.30.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: 'config'
           scan-ref: 'terraform/'
