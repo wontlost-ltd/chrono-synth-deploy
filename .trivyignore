@@ -9,3 +9,13 @@
 # NAT gateway. Workload-level egress restrictions are enforced by
 # Kyverno + Cilium at the pod layer; the SG rule is plumbing.
 AVD-AWS-0104
+
+# KSV-0014 / KSV-0118: vendored Karpenter "inflate" example deployment
+# inside .terraform/modules/eks.eks/examples/karpenter/inflate.yaml.
+# This is documentation YAML shipped with the upstream EKS module to
+# show how Karpenter scales the placeholder deployment; it is never
+# applied to a real cluster from this repo. The findings (default
+# securityContext, no readOnlyRootFilesystem) reflect upstream
+# example simplicity, not our deployment posture.
+AVD-KSV-0014
+AVD-KSV-0118
