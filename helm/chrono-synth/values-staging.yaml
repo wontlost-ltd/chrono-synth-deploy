@@ -1,0 +1,47 @@
+# Staging override — apply with:
+#   helm upgrade --install chrono-synth ./helm/chrono-synth \
+#     -n chrono-synth-staging \
+#     -f helm/chrono-synth/values.yaml \
+#     -f helm/chrono-synth/values-staging.yaml
+#
+# Larger replicas + HPA on; ingress wired with staging hostname.
+
+backend:
+  replicas: 3
+  resources:
+    requests:
+      cpu: 250m
+      memory: 384Mi
+    limits:
+      cpu: 1500m
+      memory: 1.5Gi
+  hpa:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    cpuTargetUtilization: 70
+    memoryTargetUtilization: 80
+
+frontend:
+  replicas: 2
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-staging
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+  hosts:
+    - host: staging.chrono.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: chrono-synth-tls-staging
+      hosts: [staging.chrono.example.com]
+
+externalServices:
+  postgres:
+    secretName: chrono-synth-postgres-staging
+  redis:
+    secretName: chrono-synth-redis-staging

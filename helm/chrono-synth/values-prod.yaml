@@ -1,0 +1,55 @@
+# Production override — apply with:
+#   helm upgrade --install chrono-synth ./helm/chrono-synth \
+#     -n chrono-synth-prod \
+#     -f helm/chrono-synth/values.yaml \
+#     -f helm/chrono-synth/values-prod.yaml
+#
+# Production sizing pairs with the capacity-planning runbook
+# (chrono-synth-os/docs/operations/capacity-planning.md):
+#   - 6 baseline replicas absorb 25 RPS conversation each (~150 RPS total)
+#   - HPA bursts to 20 replicas (~500 RPS) before LLM upstream rate-limits
+#     us anyway
+
+backend:
+  replicas: 6
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+  hpa:
+    enabled: true
+    minReplicas: 6
+    maxReplicas: 20
+    cpuTargetUtilization: 65
+    memoryTargetUtilization: 75
+
+frontend:
+  replicas: 3
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    # Rate limit at the ingress (defense in depth; the application has
+    # its own per-route rate limit).
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    nginx.ingress.kubernetes.io/limit-rpm: "6000"
+  hosts:
+    - host: api.chrono.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: chrono-synth-tls-prod
+      hosts: [api.chrono.example.com]
+
+externalServices:
+  postgres:
+    secretName: chrono-synth-postgres-prod
+  redis:
+    secretName: chrono-synth-redis-prod

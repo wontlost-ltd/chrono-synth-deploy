@@ -61,6 +61,14 @@ backend:
       port: http
     initialDelaySeconds: 10
     periodSeconds: 10
+  # 默认关闭 HPA — 启用前要确认 metrics-server 已部署。
+  # 阶梯：dev=off, staging=2-5, prod=6-20。环境覆盖见 values-{prod,staging}.yaml。
+  hpa:
+    enabled: false
+    minReplicas: 2
+    maxReplicas: 10
+    cpuTargetUtilization: 70
+    memoryTargetUtilization: 80
 
 frontend:
   image:
