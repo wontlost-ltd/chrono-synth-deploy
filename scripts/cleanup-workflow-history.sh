@@ -1,14 +1,20 @@
 #!/usr/bin/env bash
-# Delete failed + cancelled GitHub Actions workflow runs across the
-# Wontlost-LTD repos. Successful runs are kept — they're the CI history
-# that proves a given commit ever passed.
+# Bulk-clean GitHub Actions workflow history across the Wontlost-LTD
+# repos, keeping ONLY the most recent successful run per distinct
+# workflow.
 #
 # Why this exists:
-#   GitHub gives no UI for bulk-deleting old runs, and the Actions tab
-#   accumulates noise quickly when CI is flaky during infra changes
-#   (spending-limit blocks, broken yaml expressions, deleted runners,
-#   etc.). Cleaning that out makes the recent-success bar in the UI
-#   actually meaningful again.
+#   GitHub gives no UI for bulk-deleting old runs. The Actions tab
+#   accumulates noise quickly during infra changes (spending-limit
+#   blocks, broken yaml, deleted runners, dependabot churn). Even the
+#   "passed" history holds little value past the latest run for each
+#   workflow — older success runs' logs are rarely consulted, and the
+#   "latest run" badge on the repo page is what signals current health.
+#
+# Retention policy:
+#   For each distinct workflow_id in a repo, keep the single most
+#   recent run with `conclusion=success`. Delete everything else
+#   (failures, cancellations, AND superseded successes).
 #
 # Prerequisites:
 #   - `gh` CLI installed and authenticated as a Wontlost-LTD admin
@@ -16,18 +22,18 @@
 #   - The repos in REPOS below — edit if scope changes.
 #
 # Usage:
-#   ./cleanup-workflow-history.sh             # interactive: shows counts, prompts
+#   ./cleanup-workflow-history.sh             # interactive: shows plan, prompts
 #   ./cleanup-workflow-history.sh --yes       # non-interactive (CI / cron)
-#   ./cleanup-workflow-history.sh --dry-run   # report what would be deleted, no actual deletes
+#   ./cleanup-workflow-history.sh --dry-run   # report only, no deletes
 #
 # Notes:
 #   - Idempotent: re-running after success is a no-op.
-#   - Runs page-by-page (gh api caps at 100/page). Loops until no more
-#     failure/cancelled runs are found. Hard cap at 20 pages per repo
-#     to avoid runaway loops on API hiccups.
+#   - Pages through all runs (gh api caps at 100/page). Hard cap at
+#     30 pages per repo to bound runtime on noisy repos.
 #   - DELETE is irreversible. Logs/artifacts/step timings cannot be
-#     recovered. The Actions UI shows a "deleted" placeholder for the
-#     commit's checks, which is fine in practice.
+#     recovered; the Actions UI shows a "deleted" placeholder. The
+#     latest-success run for each workflow IS preserved precisely
+#     because the recent-success badge depends on it.
 
 set -euo pipefail
 
@@ -62,70 +68,145 @@ if ! gh auth status >/dev/null 2>&1; then
   exit 1
 fi
 
-# Survey first
+# Pull every workflow run id+conclusion+workflow_id+created_at for a repo
+# across all pages, emit one TSV line per run on stdout.
+list_all_runs() {
+  local repo="$1"
+  local page=1
+  while true; do
+    local data
+    data=$(gh api "repos/$repo/actions/runs?per_page=100&page=$page" 2>/dev/null || echo '{"workflow_runs":[]}')
+    local count
+    count=$(echo "$data" | jq -r '.workflow_runs | length')
+    [ "$count" = "0" ] && break
+
+    echo "$data" | jq -r '.workflow_runs[] | [.id, .workflow_id, .conclusion // "running", .created_at] | @tsv'
+
+    [ "$count" -lt 100 ] && break
+    page=$((page + 1))
+    [ "$page" -gt 30 ] && break
+  done
+}
+
+# Given the TSV stream from list_all_runs, output "keep" or "delete"
+# per id according to the retention policy. Keep = id of the latest
+# success per workflow_id. Delete = everything else.
+plan_for_repo() {
+  awk -F'\t' '
+    {
+      id=$1; wf=$2; concl=$3; ts=$4;
+      runs[NR]=id"\t"wf"\t"concl"\t"ts;
+      if (concl == "success") {
+        if (!(wf in latest_ts) || ts > latest_ts[wf]) {
+          latest_ts[wf] = ts;
+          latest_id[wf] = id;
+        }
+      }
+    }
+    END {
+      for (i=1; i<=NR; i++) {
+        n = split(runs[i], r, "\t");
+        id = r[1]; wf = r[2]; concl = r[3];
+        if (concl == "success" && latest_id[wf] == id) {
+          print "keep\t" id "\t" wf "\t" concl;
+        } else {
+          print "delete\t" id "\t" wf "\t" concl;
+        }
+      }
+    }
+  '
+}
+
 echo "Scanning workflow runs across ${#REPOS[@]} repos..."
 echo
-printf "%-30s %-8s %-10s %-10s\n" "repo" "total" "to-delete" ""
-printf "%-30s %-8s %-10s\n" "$(printf '%.0s-' {1..30})" "-----" "---------"
-total_to_delete=0
-for repo in "${REPOS[@]}"; do
-  total=$(gh api "repos/$repo/actions/runs" --jq '.total_count' 2>/dev/null || echo 0)
-  to_delete=$(gh api "repos/$repo/actions/runs?per_page=100" \
-    --jq '[.workflow_runs[] | select(.conclusion == "failure" or .conclusion == "cancelled")] | length' 2>/dev/null || echo 0)
-  printf "%-30s %-8s %-10s\n" "$repo" "$total" "$to_delete"
-  total_to_delete=$((total_to_delete + to_delete))
-done
+echo "Retention: keep the most recent SUCCESS run per distinct workflow."
+echo "Delete: failures, cancellations, AND older successes."
 echo
-echo "Total runs to delete (first page only — actual may be higher across pagination): $total_to_delete"
+printf "%-32s %-7s %-7s %-7s\n" "repo" "total" "keep" "delete"
+printf "%-32s %-7s %-7s %-7s\n" "$(printf '%.0s-' {1..32})" "-----" "----" "------"
+
+# First pass: build per-repo plans into temp files for execution + display
+TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TMP_DIR"' EXIT
+
+total_delete=0
+total_keep=0
+for repo in "${REPOS[@]}"; do
+  plan_file="$TMP_DIR/$(echo "$repo" | tr '/' '_').plan"
+  list_all_runs "$repo" | plan_for_repo > "$plan_file"
+
+  total=$(wc -l < "$plan_file" | tr -d ' \n')
+  keep=$( { grep -c '^keep' "$plan_file" 2>/dev/null || true; } | head -1 | tr -d ' \n')
+  delete=$( { grep -c '^delete' "$plan_file" 2>/dev/null || true; } | head -1 | tr -d ' \n')
+  [ -z "$total" ] && total=0
+  [ -z "$keep" ] && keep=0
+  [ -z "$delete" ] && delete=0
+
+  printf "%-32s %-7s %-7s %-7s\n" "$repo" "$total" "$keep" "$delete"
+  total_delete=$((total_delete + delete))
+  total_keep=$((total_keep + keep))
+done
+
+echo
+echo "Total to keep:   $total_keep"
+echo "Total to delete: $total_delete"
 
 if [ "$DRY_RUN" = "1" ]; then
+  echo
+  echo "[dry-run] Detailed keep list:"
+  for repo in "${REPOS[@]}"; do
+    plan_file="$TMP_DIR/$(echo "$repo" | tr '/' '_').plan"
+    if grep -q '^keep' "$plan_file" 2>/dev/null; then
+      echo
+      echo "  $repo:"
+      grep '^keep' "$plan_file" | while IFS=$'\t' read -r action id wf concl; do
+        printf "    keep run=%s workflow=%s\n" "$id" "$wf"
+      done
+    fi
+  done
   echo
   echo "[dry-run] No changes made."
   exit 0
 fi
 
+if [ "$total_delete" = "0" ]; then
+  echo "Nothing to delete."
+  exit 0
+fi
+
 if [ "$ASSUME_YES" != "1" ]; then
   echo
-  read -r -p "Delete failed + cancelled runs across all listed repos? [y/N] " confirm
+  read -r -p "Delete $total_delete runs (keep $total_keep)? [y/N] " confirm
   case "$confirm" in
     y|Y|yes|YES) ;;
     *) echo "Aborted."; exit 0 ;;
   esac
 fi
 
-# Run cleanup
 echo
 for repo in "${REPOS[@]}"; do
-  before=$(gh api "repos/$repo/actions/runs" --jq '.total_count' 2>/dev/null || echo 0)
-  echo "=== $repo (before: $before runs) ==="
+  plan_file="$TMP_DIR/$(echo "$repo" | tr '/' '_').plan"
+  delete_count=$( { grep -c '^delete' "$plan_file" 2>/dev/null || true; } | head -1 | tr -d ' \n')
+  [ -z "$delete_count" ] && delete_count=0
+  [ "$delete_count" = "0" ] && continue
+
+  echo "=== $repo (deleting $delete_count) ==="
   deleted=0
-  page=1
-  while true; do
-    ids=$(gh api "repos/$repo/actions/runs?per_page=100&page=$page" \
-      --jq '.workflow_runs[] | select(.conclusion == "failure" or .conclusion == "cancelled") | .id' 2>/dev/null || true)
-    page_total=$(gh api "repos/$repo/actions/runs?per_page=100&page=$page" \
-      --jq '.workflow_runs | length' 2>/dev/null || echo 0)
-
-    [ "$page_total" = "0" ] && break
-
-    while IFS= read -r id; do
-      [ -z "$id" ] && continue
-      if gh api -X DELETE "repos/$repo/actions/runs/$id" >/dev/null 2>&1; then
-        deleted=$((deleted + 1))
-      fi
-    done <<< "$ids"
-
-    [ "$page_total" -lt 100 ] && break
-    page=$((page + 1))
-    if [ "$page" -gt 20 ]; then
-      echo "  warning: stopped at page 20 (safety cap). Re-run if more remain."
-      break
+  failed=0
+  while IFS=$'\t' read -r action id wf concl; do
+    if gh api -X DELETE "repos/$repo/actions/runs/$id" >/dev/null 2>&1; then
+      deleted=$((deleted + 1))
+    else
+      failed=$((failed + 1))
     fi
-  done
+  done < <(grep '^delete' "$plan_file")
 
-  after=$(gh api "repos/$repo/actions/runs" --jq '.total_count' 2>/dev/null || echo 0)
-  echo "  deleted: $deleted, after: $after runs"
+  if [ "$failed" -gt 0 ]; then
+    echo "  deleted: $deleted, failed: $failed"
+  else
+    echo "  deleted: $deleted"
+  fi
 done
 
 echo
-echo "Done. To verify zero residue, re-run with --dry-run."
+echo "Done. Verify with: $0 --dry-run"
