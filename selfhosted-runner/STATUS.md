@@ -1,13 +1,12 @@
-# Self-hosted Runner — Current Status (paused, awaiting spending limit)
+# Self-hosted Runner — Current Status (operational)
 
-Last updated: 2026-05-07 (deferred to next month)
+Last updated: 2026-05-08
 
 ## TL;DR
 
-The org-scoped macOS runner is **fully working**. CI minutes are saving as
-expected — measured ~18× speedup on the heaviest job (build-and-test:
-14 min on GitHub Ubuntu → 45 s on M1 self-hosted). Resume from here next
-month after the GitHub spending limit is raised.
+The org-scoped macOS runner is **fully working** and the GitHub spending
+limit has been raised, so the hybrid CI is end-to-end green. Measured
+speedups summarized below.
 
 ## Whose status is what
 
@@ -43,17 +42,21 @@ month after the GitHub spending limit is raised.
 | terraform plan | deploy | uses AWS OIDC role; don't want cloud creds on dev machine |
 | ci validate | deploy | installs kustomize via sudo to /usr/local/bin |
 
-### Blocked (you, next month)
+### Resolved 2026-05-08
 
-**Raise GitHub spending limit** to $5/mo at
-https://github.com/settings/billing/spending_limit
-
-Currently every run hits at least one ubuntu-latest job, and those fail
-instantly with: `The job was not started because recent account payments
-have failed or your spending limit needs to be increased.`
-
-This affects: any push to any repo. Once raised, the hybrid CI is fully
-operational.
+- ✅ **GitHub spending limit raised** — ubuntu-latest jobs (docker-build,
+  test-postgres, perf, codeql, tauri-build [release], terraform plan)
+  now run cleanly.
+- ✅ **`tauri-build` ported to MBP M1 native** — desktop ci.yml's
+  tauri-build job now uses self-hosted MBP via OS-conditional steps
+  (apt-get gated to Linux, `brew install sqlcipher` gated to macOS).
+  build.yml matrix's macos-arm64 row also routed; release.yml stays
+  on GitHub-hosted because it consumes APPLE_CERTIFICATE / signing
+  secrets.
+- ✅ **`a11y` ported to MBP** — web/security e2e.yml's a11y job
+  (lightweight Playwright a11y suite) routed to self-hosted. The
+  full e2e suite stays ubuntu-latest because the self-hosted
+  concurrency=1 queue would bottleneck under frequent pushes.
 
 ## How to verify everything still works after a month
 
@@ -93,30 +96,38 @@ operational.
 
 ## Still on the runway (deferred, not blocking)
 
-- **`tauri-build` to macOS native**: replace apt-get install with brew
-  install (webkit comes for free on macOS), build the macOS .app
-  directly. M1 native compile would be much faster. ~1h work.
-- **Migrate `e2e` + `a11y` to MBP**: install Playwright Chromium binary
-  cache on host, then unpinning is one variable flip. ~30min.
+- **Migrate `e2e` to MBP**: not done deliberately. Full Playwright
+  e2e suite is 5-10 min and would dominate the concurrency=1
+  self-hosted queue if pushed frequently. Ubuntu-latest's parallel
+  capacity is the better fit. Reconsider if push frequency drops.
 - **Add 2nd runner for parallelism**: register another runner instance
   (different RUNNER_DIR + RUNNER_NAME) when queue depth becomes the
-  bottleneck.
+  bottleneck. Today's queue rarely exceeds 1.
 - **Org-level `CI_RUNNER_LABELS` variable**: set once at the org level
   instead of 4 repos. https://github.com/organizations/Wontlost-LTD/settings/variables/actions
 
-## Measured speedups (smoke run 2026-05-07)
+## Measured speedups
 
-| Job | GitHub Ubuntu | M1 self-hosted | Speedup |
-|---|---|---|---|
-| build-and-test (os) | ~14 min | 45 s | 18× |
-| contract-and-kernel (os) | ~5 min | 29 s | 10× |
-| typecheck (desktop) | not measured | 18 s | n/a |
-| SBOM (os, web) | ~1 min | 30 s | 2× |
-| license-check (os, web) | ~1 min | 22 s | 2× |
-| terraform fmt+tflint | ~1 min | 22 s | 2× |
+Numbers from smoke runs on 2026-05-07/08.
 
-Largest savings come from npm + tsc cold-start cost being amortized away
-(MBP `~/.npm` is 14 GB warm cache, GitHub Ubuntu starts empty each run).
+| Job | Repo | GitHub Ubuntu | M1 self-hosted | Speedup |
+|---|---|---|---|---|
+| build-and-test | os | ~14 min | 44 s | ~18× |
+| contract-and-kernel | os | ~5 min | 28 s | ~10× |
+| docker-build | os | 2m 6s | (stays GH) | — |
+| test-postgres | os | 2m 3s | (stays GH) | — |
+| tauri-build | desktop | ~6-7 min | 2m 50s (cold) | ~3× |
+| typecheck | desktop | not measured | 17 s | — |
+| a11y | web | not measured | 47 s | — |
+| SBOM | os, web | ~1 min | 30 s | ~2× |
+| license-check | os, web | ~1 min | 22 s | ~2× |
+| terraform fmt+tflint | deploy | ~1 min | 22 s | ~2× |
+
+Largest savings come from npm + tsc + cargo cold-start cost being
+amortized away (MBP has a warm `~/.npm`, persistent `node_modules`,
+and persistent `src-tauri/target/`; GitHub Ubuntu starts empty each
+run). Per push: ~20 min of cumulative GitHub-hosted Ubuntu time
+shifted to local hardware.
 
 ## Files of record
 
