@@ -1,0 +1,67 @@
+# Self-hosted GitHub Actions runner for Synology Container Manager.
+#
+# Image: myoung34/github-runner — community-maintained, supports ephemeral mode.
+# Ephemeral mode means each job runs in a fresh registration; the runner deregisters
+# after the job completes and a new one is started by Container Manager's restart policy.
+#
+# Prereqs:
+#   - DSM 7.x with Container Manager package
+#   - Outbound HTTPS to github.com + *.actions.githubusercontent.com
+#   - File `.env` (next to this compose file) with REPO_URL + RUNNER_TOKEN.
+#     RUNNER_TOKEN is a one-time registration token from GitHub
+#     (Settings -> Actions -> Runners -> New self-hosted runner). It expires
+#     after one hour, so set it just before bringing the stack up.
+#
+# Usage on Synology:
+#   1. SSH in or use File Station to upload this folder under /volume1/docker/
+#   2. Create .env from .env.example
+#   3. Container Manager -> Project -> Create -> docker-compose.yml from path
+#   4. Start
+#
+# To rotate to another repo: just edit REPO_URL + RUNNER_TOKEN in .env, restart.
+# To stop: Container Manager -> Stop. The runner deregisters cleanly on SIGTERM.
+
+services:
+  runner:
+    image: docker.io/myoung34/github-runner:2.328.0
+    container_name: chrono-gha-runner
+    restart: unless-stopped
+    environment:
+      # Registration target — repo-scoped (single repo) or org-scoped.
+      # Repo-scoped is simpler and matches our pilot. Switch to ORG_NAME for
+      # org-wide later.
+      REPO_URL: ${REPO_URL}
+      RUNNER_TOKEN: ${RUNNER_TOKEN}
+      RUNNER_NAME: synology-ds916-${RUNNER_SUFFIX:-1}
+      # Labels are how workflows target this runner. The workflow uses
+      # `runs-on: [self-hosted, linux, x64, synology]` -> match all four.
+      LABELS: self-hosted,linux,x64,synology
+      # Ephemeral: deregister after each job. Container Manager restarts the
+      # container, which re-registers fresh. This gives per-job isolation
+      # without the manual cleanup of a long-lived runner.
+      EPHEMERAL: "true"
+      # Don't auto-update — we pin the image tag for reproducibility.
+      DISABLE_AUTO_UPDATE: "true"
+    volumes:
+      # Mount the host's Docker socket so the runner can:
+      #   (a) run jobs that use `services:` blocks (e.g. test-postgres)
+      #   (b) run `docker build` steps (e.g. docker-build job)
+      # Trade-off: the runner has full root-equivalent access to the host
+      # via Docker. Acceptable here because all 4 chrono repos are PRIVATE
+      # (no fork-PR attack vector) and ephemeral mode resets state per job.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Cache layer — npm/cargo/pip downloads persist across job runs but
+      # are scoped to the runner only. Faster CI without leaking secrets.
+      - runner-cache:/home/runner/.cache
+    # Resource caps so a runaway job doesn't take down DSM. DS916+ has
+    # 4 cores / 8 GB; we reserve half for DSM + Synology services.
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G
+        reservations:
+          memory: 1G
+
+volumes:
+  runner-cache:
