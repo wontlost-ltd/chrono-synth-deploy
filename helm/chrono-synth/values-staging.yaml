@@ -7,6 +7,13 @@
 # Larger replicas + HPA on; ingress wired with staging hostname.
 
 backend:
+  # pgvector path: enabled in staging once v071 has applied and
+  # `pgvector-reconcile.sh --mode=backfill` has populated the embedding
+  # column from existing embedding_json rows. Flip to "false" to revert
+  # to the in-memory + JSON path without code changes; the reconcile
+  # drift check belongs on a scheduled job.
+  env:
+    CHRONO_INTELLIGENCE_USE_VECTOR_EXT: "true"
   replicas: 3
   resources:
     requests:

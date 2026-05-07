@@ -32,6 +32,19 @@ backend:
   env:
     NODE_ENV: production
     CHRONO_DB_DRIVER: postgres
+    # pgvector defaults: dimension matches text-embedding-3-small. The
+    # extension itself is enabled via migration v071 (CREATE EXTENSION
+    # IF NOT EXISTS vector) — RDS 17 ships with pgvector pre-allowed,
+    # no parameter group changes needed.
+    CHRONO_INTELLIGENCE_EMBEDDING_DIMS: "1536"
+    # Off by default; flip on per-environment via values-staging.yaml /
+    # values-prod.yaml after the v071 migration has applied AND
+    # pgvector-reconcile.sh --mode=backfill has populated the embedding
+    # column from existing embedding_json rows. See ADR / plan.
+    CHRONO_INTELLIGENCE_USE_VECTOR_EXT: "false"
+    # Per-tenant ramp lever for the gradual rollout (5% → 10% → ...).
+    # Comma-separated tenant ids; takes precedence over the global flag.
+    CHRONO_INTELLIGENCE_VECTOR_EXT_TENANTS: ""
   service:
     type: ClusterIP
     port: 3000

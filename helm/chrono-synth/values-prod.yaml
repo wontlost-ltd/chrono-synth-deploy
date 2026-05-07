@@ -11,6 +11,16 @@
 #     us anyway
 
 backend:
+  # pgvector ramp lever for production. Stays "false" until staging has
+  # observed the pgvector path under load for at least 7 days with zero
+  # drift reported by the reconcile cron. Use vectorExtensionTenants
+  # below for an additive opt-in if you want to canary individual
+  # tenants before flipping the global default.
+  env:
+    CHRONO_INTELLIGENCE_USE_VECTOR_EXT: "false"
+    # Comma-separated tenant ids that should always get pgvector,
+    # regardless of the global flag. Empty = global flag wins.
+    CHRONO_INTELLIGENCE_VECTOR_EXT_TENANTS: ""
   replicas: 6
   resources:
     requests:
