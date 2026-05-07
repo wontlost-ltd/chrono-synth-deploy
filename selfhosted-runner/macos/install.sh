@@ -52,12 +52,13 @@ else
   echo "+ runner already extracted in $RUNNER_DIR"
 fi
 
-# Force re-config in case a previous registration is stale. The remove call
-# is allowed to fail (no prior registration is fine).
-if [ -f .runner ]; then
-  echo "+ existing registration found — removing before re-config"
-  ./config.sh remove --token "$TOKEN" || true
-fi
+# Wipe any prior registration state. We do NOT call `./config.sh remove`
+# here — that endpoint requires a separate *removal* token, not the
+# registration token, and calling it with the wrong token can cause GitHub
+# to invalidate the registration token before we get to use it. Instead,
+# delete the local state files directly and let `--replace` below tell
+# GitHub to overwrite any stale registration server-side.
+rm -f .runner .credentials .credentials_rsaparams 2>/dev/null || true
 
 echo "+ registering runner '$RUNNER_NAME' against $REPO_URL"
 ./config.sh \
