@@ -24,7 +24,7 @@ env:
 jobs:
   fmt-and-lint:
     name: terraform fmt + tflint
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABELS && fromJSON(vars.CI_RUNNER_LABELS) || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
@@ -54,7 +54,7 @@ jobs:
 
   security-scan:
     name: trivy config scan
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.CI_RUNNER_LABELS && fromJSON(vars.CI_RUNNER_LABELS) || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v6
