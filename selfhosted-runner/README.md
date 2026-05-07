@@ -6,11 +6,18 @@ or by deploying a parallel container with `RUNNER_SUFFIX=2`.
 
 > ⚠️ **Synology DSM kernel requirement**: this compose file targets DSM 7.2+
 > machines whose kernel is **4.4 or newer** (DS923+, DS1522+, DS1621+, etc.).
-> Older boxes like the **DS916+ (kernel 3.10.108)** lack the `getrandom(2)`
-> syscall that modern git in the runner container relies on; jobs will fail
-> with `error: unable to get random bytes for temporary file: Function not
-> implemented`. Run `uname -r` on the NAS first; if you see 3.10.x or 3.x,
-> use the native macOS runner under `macos/` instead.
+>
+> The kernel is fixed by the BSP (Board Support Package) shipped with each
+> hardware model — DSM version upgrades **do not** change it. A DS916+ stays
+> on Linux 3.10.108 even after upgrading to DSM 7.3, because the Atom C2538
+> BSP was authored against that kernel and Synology never refreshes it.
+>
+> 3.10 is missing the `getrandom(2)` syscall that modern git in the runner
+> container relies on; jobs will fail with `error: unable to get random
+> bytes for temporary file: Function not implemented`. Run `uname -r` on
+> the NAS first; if you see 3.10.x or 3.x, this compose path will not work
+> regardless of DSM version — use the native macOS runner under `macos/`
+> instead.
 
 ## What this gives us
 
