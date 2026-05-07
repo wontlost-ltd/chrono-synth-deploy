@@ -1,0 +1,68 @@
+name: Cleanup Workflow History
+
+# Weekly bulk-cleanup of old GitHub Actions runs across the four
+# Wontlost-LTD chrono-synth repos. Retention policy: keep ONLY the
+# most recent successful run per distinct workflow_id; delete failures,
+# cancellations, and superseded successes.
+#
+# Why this lives in chrono-synth-deploy:
+#   - All four repos are private under the same org. One workflow,
+#     one secret (WONTLOST_LTD_CLEANUP_PAT), four targets.
+#   - chrono-synth-deploy is the natural home for cross-repo ops.
+#
+# Why a cross-repo PAT instead of GITHUB_TOKEN:
+#   - GITHUB_TOKEN is repo-scoped and cannot delete runs in OTHER repos.
+#   - WONTLOST_LTD_CLEANUP_PAT is org-level, fine-grained to the four
+#     chrono-synth repos with `Actions: Read and write` permission.
+#
+# Manual trigger via `gh workflow run cleanup-workflow-history.yml`
+# accepts a `dry_run` input (default: true) so you can preview before
+# pulling the trigger.
+
+on:
+  schedule:
+    # Every Sunday at 04:00 UTC. Pick a time when you're least likely
+    # to be pushing work that we'd want to inspect.
+    - cron: '0 4 * * 0'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (report only, do not delete)'
+        type: boolean
+        default: true
+
+permissions:
+  # No special permissions needed on this repo — the PAT does the
+  # cross-repo deletes. Setting `contents: read` is the minimum so
+  # the runner can checkout this repo's script.
+  contents: read
+
+jobs:
+  cleanup:
+    name: Cleanup
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Authenticate gh CLI with cross-repo PAT
+        env:
+          GH_TOKEN: ${{ secrets.WONTLOST_LTD_CLEANUP_PAT }}
+        run: |
+          # The script invokes `gh api` directly; setting GH_TOKEN
+          # globally is the cleanest auth path. Verify the PAT has
+          # the scopes we need before touching anything.
+          gh auth status
+          echo "PAT scopes verified."
+
+      - name: Run cleanup
+        env:
+          GH_TOKEN: ${{ secrets.WONTLOST_LTD_CLEANUP_PAT }}
+        run: |
+          # Schedule runs always go non-interactive; manual dispatches
+          # honor the dry_run input.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+            ./scripts/cleanup-workflow-history.sh --dry-run
+          else
+            ./scripts/cleanup-workflow-history.sh --yes
+          fi
