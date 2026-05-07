@@ -1,8 +1,16 @@
-# Self-hosted GitHub Actions Runner — Synology DS916+
+# Self-hosted GitHub Actions Runner — Synology Container Manager
 
 Pilot scope: chrono-synth-os only (most active repo, pure Linux jobs).
 Other repos can join later by changing `REPO_URL` in `.env` and restarting,
 or by deploying a parallel container with `RUNNER_SUFFIX=2`.
+
+> ⚠️ **Synology DSM kernel requirement**: this compose file targets DSM 7.2+
+> machines whose kernel is **4.4 or newer** (DS923+, DS1522+, DS1621+, etc.).
+> Older boxes like the **DS916+ (kernel 3.10.108)** lack the `getrandom(2)`
+> syscall that modern git in the runner container relies on; jobs will fail
+> with `error: unable to get random bytes for temporary file: Function not
+> implemented`. Run `uname -r` on the NAS first; if you see 3.10.x or 3.x,
+> use the native macOS runner under `macos/` instead.
 
 ## What this gives us
 
