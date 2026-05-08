@@ -1,6 +1,13 @@
 # ChronoSynth Deploy
 
-ChronoSynth 的统一部署与编排仓库，负责把 `chrono-synth-os`、`chrono-synth-web` 以及企业级运行面能力组装成可运行的交付拓扑。
+The deployment topology for **ChronoSynth — agent governance for enterprise
+AI**. This repo contains the Helm chart, Terraform modules (EKS / RDS /
+ElastiCache / KMS / VPC / S3), and operational runbooks for putting
+ChronoSynth in front of your AI agents in production — either self-hosted
+on EKS / GKE with your own KMS keys, or as a podman stack for local
+development and air-gapped previews.
+
+> Product narrative: see `chrono-synth-os/.claude/gtm/01-pr-faq.md`.
 
 当前仓库覆盖三类能力，并且本地运行完全基于原生 `podman` CLI 脚本，不依赖任何 Compose 兼容层：
 
