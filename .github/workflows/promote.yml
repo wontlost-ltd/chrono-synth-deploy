@@ -44,7 +44,7 @@ jobs:
         continue-on-error: true
 
       - name: Create promotion PR
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9
         with:
           script: |
             const service = '${{ steps.service.outputs.name }}';
