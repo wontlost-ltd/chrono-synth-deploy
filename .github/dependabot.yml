@@ -1,0 +1,16 @@
+version: 2
+updates:
+  # GitHub Actions used by .github/workflows/*.yml
+  # Keeps actions/checkout, anchore/sbom-action, hashicorp/setup-terraform,
+  # aquasecurity/trivy-action etc. on supported versions.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '04:00'
+      timezone: UTC
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+      - github-actions
