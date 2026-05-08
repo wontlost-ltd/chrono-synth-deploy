@@ -128,4 +128,77 @@ assert_contains "$TMP_DIR/staging.yaml" 'CHRONO_OBSERVABILITY_KAFKA_TOPIC:' \
 assert_contains "$TMP_DIR/prod.yaml"    'CHRONO_OBSERVABILITY_KAFKA_TOPIC:' \
   'prod 声明 event ledger outbox Kafka topic'
 
+# ── 安全基线（P0.3）：PodSecurityAdmission + NetworkPolicy 完整性 ─────────────
+# 每个 overlay 必须满足：
+#  - namespace 标注 PSA `restricted` enforce/audit/warn
+#  - 默认 deny-all NetworkPolicy 存在
+#  - 每个 workload 都有专属 NetworkPolicy 选中（避免被 default-deny 静默切断）
+#  - 每个 container 都有 runAsNonRoot + capabilities.drop=ALL + seccompProfile
+
+for overlay_file in "$TMP_DIR/dev.yaml" "$TMP_DIR/staging.yaml" "$TMP_DIR/prod.yaml"; do
+  overlay_name="$(basename "$overlay_file" .yaml)"
+
+  # PSA labels（namespace 上）
+  for label in 'enforce' 'audit' 'warn'; do
+    if grep -Eq "pod-security.kubernetes.io/${label}: restricted" "$overlay_file"; then
+      pass "$overlay_name: namespace declares PSA ${label}=restricted"
+    else
+      fail "$overlay_name: namespace missing PSA ${label}=restricted label"
+    fi
+  done
+
+  # default-deny NetworkPolicy
+  if grep -Eq 'name: default-deny-all' "$overlay_file"; then
+    pass "$overlay_name: default-deny-all NetworkPolicy present"
+  else
+    fail "$overlay_name: missing default-deny-all NetworkPolicy"
+  fi
+
+  # 每个 workload 都有对应的 *-policy NetworkPolicy
+  workloads='chrono-synth-os chrono-synth-web observability-worker postgres redis prometheus grafana jaeger'
+  for w in $workloads; do
+    # netpol 命名约定：<workload>-policy 或 <component-prefix>-policy
+    # 例外：chrono-synth-os → backend-policy；chrono-synth-web → frontend-policy
+    case "$w" in
+      chrono-synth-os) netpol='backend-policy' ;;
+      chrono-synth-web) netpol='frontend-policy' ;;
+      *) netpol="${w}-policy" ;;
+    esac
+    if grep -Eq "name: ${netpol}\$" "$overlay_file"; then
+      pass "$overlay_name: ${w} has dedicated NetworkPolicy (${netpol})"
+    else
+      fail "$overlay_name: ${w} missing dedicated NetworkPolicy (expected name=${netpol})"
+    fi
+  done
+
+  # 每个 container 必须 capabilities.drop = [ALL] (PSA restricted 硬性要求)
+  # 用 grep 计 'drop:' + '- ALL' 出现次数 ≥ workload 数
+  cap_drop_count=$(grep -Ec 'drop:|drop: \[ALL\]' "$overlay_file" || true)
+  workload_count=$(grep -Ec '^kind: (Deployment|StatefulSet)$' "$overlay_file" || true)
+  if [ "$cap_drop_count" -ge "$workload_count" ]; then
+    pass "$overlay_name: ${workload_count} workload(s) all drop capabilities (PSA restricted)"
+  else
+    fail "$overlay_name: only ${cap_drop_count} cap-drop blocks found, expected >= ${workload_count}"
+  fi
+
+  # seccompProfile 要在 pod + container 两层都设
+  seccomp_count=$(grep -Ec 'type: RuntimeDefault' "$overlay_file" || true)
+  # 期望：每个 workload 至少 2 次（pod + container），保守判 >= 2*workload
+  expected_seccomp=$((workload_count * 2))
+  if [ "$seccomp_count" -ge "$expected_seccomp" ]; then
+    pass "$overlay_name: seccompProfile=RuntimeDefault on ${workload_count} workload(s) (pod+container)"
+  else
+    fail "$overlay_name: only ${seccomp_count} seccomp blocks, expected >= ${expected_seccomp}"
+  fi
+
+  # readOnlyRootFilesystem — 不是 PSA restricted 硬性要求，但当前 baseline 全部
+  # workload 都启用。任何回退（某个 deployment 把它去掉）应当 fail 让人复审。
+  ro_count=$(grep -Ec 'readOnlyRootFilesystem: true' "$overlay_file" || true)
+  if [ "$ro_count" -ge "$workload_count" ]; then
+    pass "$overlay_name: readOnlyRootFilesystem on ${workload_count} workload(s)"
+  else
+    fail "$overlay_name: only ${ro_count} readOnlyRootFilesystem entries, expected >= ${workload_count}"
+  fi
+done
+
 printf '\n[OK] All overlays passed validation.\n'
