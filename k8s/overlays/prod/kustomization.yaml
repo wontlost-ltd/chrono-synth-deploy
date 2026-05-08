@@ -8,6 +8,12 @@ resources:
   - pdb-frontend.yaml
   - pdb-worker.yaml
 
+# SLO monitoring (kustomize Component): SLI recording rules,
+# multi-window burn-rate alerts, alertmanager Slack receiver, Chrono
+# SLO grafana dashboard. Dev does not include this Component.
+components:
+  - ../../addons/observability-slo
+
 patches:
   # 后端：2 副本、高资源
   - target:

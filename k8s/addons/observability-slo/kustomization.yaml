@@ -1,18 +1,70 @@
-apiVersion: kustomize.config.k8s.io/v1beta1
-kind: Kustomization
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+# observability-slo addon — wire SLI/SLO recording rules, multi-window
+# burn-rate alerts, alertmanager (Slack receiver), and the SLO grafana
+# dashboard into staging / prod overlays. Dev does not pull this in;
+# its prometheus keeps base/prometheus.yml without `alerting:` so it
+# doesn't spam logs trying to reach a non-existent alertmanager.
+#
+# Type=Component (not Kustomization) is required so generators here
+# can use behavior:replace against ConfigMaps defined upstream in
+# `../../base`. A plain Kustomization can't see upstream resources.
+#
+# What this addon contributes when included:
+#   - Replaces the `prometheus-config` ConfigMap with the SLO-augmented
+#     prometheus.yml (adds rule_files + alerting blocks).
+#   - Adds chrono-slo-recording-rules + chrono-slo-alerts ConfigMaps,
+#     mounted into prometheus at /etc/prometheus/rules/.
+#   - Adds the alertmanager Deployment + Service + Secret + NetworkPolicy.
+#   - Adds prometheus → alertmanager:9093 egress.
+#   - Adds the grafana-dashboard-chrono-slo ConfigMap and mounts it into
+#     grafana at /var/lib/grafana/dashboards/chrono-slo.json.
+#
+# Usage: each consuming overlay adds `../../addons/observability-slo`
+# to its `resources:` list.
 
 namespace: chrono-synth
 
 resources:
-  - recording-rules.yaml
   - alerts.yaml
+  - recording-rules.yaml
   - alertmanager.yaml
 
+# Behavior=replace overrides the base `prometheus-config` ConfigMap.
+# This is why dev must NOT include this addon: replacing dev's
+# prometheus.yml with the SLO version would point dev's prometheus at a
+# non-existent alertmanager Service.
+configMapGenerator:
+  - name: prometheus-config
+    behavior: replace
+    files:
+      - prometheus.yml=prometheus-slo.yml
+  - name: grafana-dashboard-chrono-slo
+    files:
+      - chrono-slo.json=dashboards/chrono-slo.json
+
+generatorOptions:
+  disableNameSuffixHash: true
+
+# Strategic merge patches add ConfigMap volumes + mounts to prometheus
+# and grafana. JSON 6902 patch appends the alertmanager egress to
+# prometheus-policy without dropping existing scrape egresses.
+patches:
+  - path: patches/prometheus-rules-mount.yaml
+    target:
+      kind: Deployment
+      name: prometheus
+  - path: patches/grafana-slo-dashboard.yaml
+    target:
+      kind: Deployment
+      name: grafana
+  - path: patches/prometheus-alertmanager-egress.yaml
+    target:
+      kind: NetworkPolicy
+      name: prometheus-policy
+
 # Wire-up note (per-overlay):
-# - mount the chrono-slo-recording-rules + chrono-slo-alerts ConfigMaps
-#   into the prometheus deployment under /etc/prometheus/rules/ and
-#   set --rule-files=/etc/prometheus/rules/*.yml
-# - point prometheus --alertmanager.url at http://alertmanager:9093
 # - rotate alertmanager-secrets at deploy time:
 #     kubectl create secret generic alertmanager-secrets \
 #       -n chrono-synth \

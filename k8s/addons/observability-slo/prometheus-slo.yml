@@ -1,0 +1,54 @@
+# SLO-augmented prometheus configuration.
+#
+# This is the same content as ../../base/prometheus/prometheus.yml plus
+# `rule_files` (so SLI / burn-rate recording rules and alerts are loaded)
+# and `alerting` (so fired alerts are routed to alertmanager).
+#
+# Used as a replacement for the `prometheus-config` ConfigMap via
+# kustomize's configMapGenerator + behavior: replace. Only staging and
+# prod overlays pull this in; dev keeps base's original prometheus.yml
+# so dev doesn't see alertmanager DNS errors.
+#
+# Keep scrape_configs in sync with ../../base/prometheus/prometheus.yml.
+# A drift will silently make staging/prod stop scraping the missing
+# job, so this is intentionally a copy-with-extension rather than a patch.
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - /etc/prometheus/rules/*.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+scrape_configs:
+  - job_name: chrono-synth-backend
+    metrics_path: /metrics/prometheus
+    bearer_token_file: /etc/prometheus/secrets/metrics-scrape-token/token
+    static_configs:
+      - targets:
+          - chrono-synth-os:3000
+        labels:
+          service: chrono-synth-os
+          environment: k8s
+
+  - job_name: chrono-synth-observability-worker
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - observability-worker:3100
+        labels:
+          service: observability-worker
+          environment: k8s
+
+  - job_name: prometheus-self
+    static_configs:
+      - targets:
+          - localhost:9090
+        labels:
+          environment: k8s

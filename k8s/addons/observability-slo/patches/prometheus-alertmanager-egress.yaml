@@ -1,0 +1,21 @@
+# JSON 6902 patch — appends an egress entry to prometheus-policy so
+# prometheus can post fired alerts to alertmanager:9093.
+#
+# Why JSON 6902 (not strategic merge): NetworkPolicy lists default to
+# `replace` semantics under strategic merge, which would silently drop
+# the existing scrape egresses. JSON 6902 `add` with `/-` index appends
+# without touching prior entries.
+#
+# alertmanager itself ships its own NetworkPolicy (alertmanager-policy
+# in alertmanager.yaml) that allows ingress from prometheus on 9093.
+# This patch closes the symmetric egress side on the prometheus rule.
+- op: add
+  path: /spec/egress/-
+  value:
+    to:
+      - podSelector:
+          matchLabels:
+            app.kubernetes.io/name: alertmanager
+    ports:
+      - protocol: TCP
+        port: 9093

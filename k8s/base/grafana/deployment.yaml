@@ -56,8 +56,16 @@ spec:
             - name: dashboards-provider
               mountPath: /etc/grafana/provisioning/dashboards/dashboards.yml
               subPath: provisioning-dashboards.yml
-            - name: dashboards
-              mountPath: /var/lib/grafana/dashboards
+            # Each dashboard JSON is mounted via its own subPath into
+            # /var/lib/grafana/dashboards. The grafana file provider
+            # picks up everything in that directory. Adding a new
+            # dashboard = (configMapGenerator entry) + (volume) +
+            # (volumeMount with subPath). The SLO dashboard is added
+            # via the observability-slo addon (staging/prod only) and
+            # therefore is not in this base manifest.
+            - name: dashboard-enterprise-overview
+              mountPath: /var/lib/grafana/dashboards/chrono-synth-enterprise-overview.json
+              subPath: chrono-synth-enterprise-overview.json
             # readOnlyRootFilesystem requires writable /tmp for runtime work
             # (plugin downloads, image rendering scratch).
             - name: tmp
@@ -94,6 +102,6 @@ spec:
         - name: dashboards-provider
           configMap:
             name: grafana-dashboards-provider
-        - name: dashboards
+        - name: dashboard-enterprise-overview
           configMap:
             name: grafana-dashboard-chrono-synth-overview
