@@ -98,7 +98,7 @@ jobs:
         # NOTE: skipped when secrets.AWS_TF_ROLE_ARN is unset (e.g. fork PR).
         # The plan job exits cleanly with a warning rather than failing closed.
         if: ${{ vars.AWS_TF_ROLE_ARN != '' }}
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ vars.AWS_TF_ROLE_ARN }}
           aws-region: us-west-2
