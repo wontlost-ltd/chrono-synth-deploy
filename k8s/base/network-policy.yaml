@@ -99,6 +99,14 @@ spec:
           port: 9092
         - protocol: TCP
           port: 9093
+    # Jaeger OTLP HTTP — backend exports traces via CHRONO_OTEL_ENDPOINT.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: jaeger
+      ports:
+        - protocol: TCP
+          port: 4318
     # External HTTPS — Stripe / KMS / OAuth / Calendar / Gmail / Exa.
     # Pinned to TCP/443 + RFC1918 carve-outs. Tighter IP/SNI pinning belongs in
     # CNI-level policy (Cilium FQDN, Calico GlobalNetworkPolicy).
@@ -181,6 +189,54 @@ spec:
           port: 9092
         - protocol: TCP
           port: 9093
+    # Jaeger OTLP HTTP — worker inherits backend-config so it shares
+    # CHRONO_OTEL_ENDPOINT=http://jaeger:4318.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: jaeger
+      ports:
+        - protocol: TCP
+          port: 4318
+
+---
+# Jaeger: ingress from backend + worker (OTLP) and grafana + ingress (UI);
+# no egress required (badger writes to local emptyDir, all-in-one mode).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: jaeger-policy
+  namespace: chrono-synth
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: jaeger
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: chrono-synth-os
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: observability-worker
+      ports:
+        - protocol: TCP
+          port: 4318
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/component: ingress
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ingress-nginx
+      ports:
+        - protocol: TCP
+          port: 16686
 
 ---
 # PostgreSQL: ingress from backend + observability worker only.
