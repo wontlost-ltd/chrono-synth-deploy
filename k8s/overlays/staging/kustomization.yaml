@@ -4,6 +4,13 @@ kind: Kustomization
 resources:
   - ../../base
 
+# SLO monitoring (kustomize Component): SLI recording rules,
+# multi-window burn-rate alerts, alertmanager Slack receiver, Chrono
+# SLO grafana dashboard. Dev does not include this Component — see
+# addon kustomization.yaml for rationale.
+components:
+  - ../../addons/observability-slo
+
 patches:
   # 后端：单副本
   - target:

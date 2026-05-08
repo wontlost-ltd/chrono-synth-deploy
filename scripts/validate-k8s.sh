@@ -36,6 +36,15 @@ assert_contains() {
   fi
 }
 
+assert_not_contains() {
+  local file="$1" pattern="$2" label="$3"
+  if grep -Eq -- "$pattern" "$file"; then
+    fail "$label (pattern should NOT appear)"
+  else
+    pass "$label"
+  fi
+}
+
 assert_count_at_least() {
   local file="$1" pattern="$2" minimum="$3" label="$4"
   local count
@@ -200,5 +209,60 @@ for overlay_file in "$TMP_DIR/dev.yaml" "$TMP_DIR/staging.yaml" "$TMP_DIR/prod.y
     fail "$overlay_name: only ${ro_count} readOnlyRootFilesystem entries, expected >= ${workload_count}"
   fi
 done
+
+# ── SLO 监控接线（P0.2）────────────────────────────────────────────────────
+# observability-slo addon 仅 staging/prod 启用。dev 反向断言：保持 SLO 资源完全
+# 不存在，避免 dev 集群 prometheus 抱怨 alertmanager DNS 失败。
+
+# Staging + prod 必须包含完整 SLO 链路
+for overlay_file in "$TMP_DIR/staging.yaml" "$TMP_DIR/prod.yaml"; do
+  overlay_name="$(basename "$overlay_file" .yaml)"
+
+  # 1. alertmanager Service 必须存在
+  if grep -Eq '^kind: Service$' "$overlay_file" \
+     && grep -Eq '  name: alertmanager$' "$overlay_file"; then
+    pass "$overlay_name: alertmanager Service present"
+  else
+    fail "$overlay_name: alertmanager Service missing"
+  fi
+
+  # 2. SLO ConfigMaps 都生成了
+  assert_contains "$overlay_file" 'name: chrono-slo-recording-rules' \
+    "$overlay_name: chrono-slo-recording-rules ConfigMap present"
+  assert_contains "$overlay_file" 'name: chrono-slo-alerts' \
+    "$overlay_name: chrono-slo-alerts ConfigMap present"
+
+  # 3. prometheus.yml 包含 rule_files + alerting block
+  assert_contains "$overlay_file" 'rule_files:' \
+    "$overlay_name: prometheus-config 含 rule_files 段"
+  assert_contains "$overlay_file" 'alertmanager:9093' \
+    "$overlay_name: prometheus-config 指向 alertmanager:9093"
+
+  # 4. prometheus deployment 挂 SLO 规则文件
+  assert_contains "$overlay_file" 'name: slo-recording-rules' \
+    "$overlay_name: prometheus 挂 slo-recording-rules ConfigMap"
+  assert_contains "$overlay_file" 'name: slo-alerts' \
+    "$overlay_name: prometheus 挂 slo-alerts ConfigMap"
+
+  # 5. grafana 挂 chrono-slo dashboard
+  assert_contains "$overlay_file" 'name: grafana-dashboard-chrono-slo' \
+    "$overlay_name: chrono-slo dashboard ConfigMap present"
+  assert_contains "$overlay_file" '/var/lib/grafana/dashboards/chrono-slo.json' \
+    "$overlay_name: grafana 挂 chrono-slo.json"
+done
+
+# Dev 反向断言：所有 SLO 资源都不应出现
+assert_not_contains "$TMP_DIR/dev.yaml" 'name: alertmanager$' \
+  'dev: alertmanager 不应启用'
+assert_not_contains "$TMP_DIR/dev.yaml" 'chrono-slo-recording-rules' \
+  'dev: SLO recording rules 不应启用'
+assert_not_contains "$TMP_DIR/dev.yaml" 'chrono-slo-alerts' \
+  'dev: SLO alerts 不应启用'
+assert_not_contains "$TMP_DIR/dev.yaml" 'rule_files:' \
+  'dev: prometheus.yml 不应含 rule_files 段'
+assert_not_contains "$TMP_DIR/dev.yaml" 'alertmanager:9093' \
+  'dev: prometheus.yml 不应指向 alertmanager:9093'
+assert_not_contains "$TMP_DIR/dev.yaml" 'grafana-dashboard-chrono-slo' \
+  'dev: chrono-slo dashboard 不应启用'
 
 printf '\n[OK] All overlays passed validation.\n'

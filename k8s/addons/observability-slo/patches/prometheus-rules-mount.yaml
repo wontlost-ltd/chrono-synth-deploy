@@ -1,0 +1,35 @@
+# Strategic merge patch — adds /etc/prometheus/rules/ ConfigMap mounts so
+# the SLO recording rules and alerts referenced by prometheus.yml's
+# `rule_files: /etc/prometheus/rules/*.yml` glob actually exist.
+#
+# Two ConfigMaps because the addon ships them separately:
+#   - chrono-slo-recording-rules → /etc/prometheus/rules/recording-rules.yml
+#   - chrono-slo-alerts          → /etc/prometheus/rules/alerts.yml
+#
+# subPath mounts because Kubernetes won't let two ConfigMap volumes share
+# the same target directory; the prometheus rules glob does not care
+# whether files come from one ConfigMap or many.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+  namespace: chrono-synth
+spec:
+  template:
+    spec:
+      containers:
+        - name: prometheus
+          volumeMounts:
+            - name: slo-recording-rules
+              mountPath: /etc/prometheus/rules/recording-rules.yml
+              subPath: recording-rules.yml
+            - name: slo-alerts
+              mountPath: /etc/prometheus/rules/alerts.yml
+              subPath: alerts.yml
+      volumes:
+        - name: slo-recording-rules
+          configMap:
+            name: chrono-slo-recording-rules
+        - name: slo-alerts
+          configMap:
+            name: chrono-slo-alerts
