@@ -2,6 +2,10 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: chrono-synth
+  annotations:
+    # ArgoCD sync wave -10: namespace must exist before any resource in it.
+    # See docs/operations/gitops-runbook.md "Sync waves".
+    argocd.argoproj.io/sync-wave: '-10'
   labels:
     app.kubernetes.io/part-of: chrono-synth
     # PodSecurityAdmission: enforce restricted profile.

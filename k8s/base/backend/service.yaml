@@ -3,6 +3,9 @@ kind: Service
 metadata:
   name: chrono-synth-os
   namespace: chrono-synth
+  annotations:
+    # ArgoCD sync wave 5: Business tier service — see deployment.
+    argocd.argoproj.io/sync-wave: '5'
   labels:
     app.kubernetes.io/name: chrono-synth-os
     app.kubernetes.io/component: backend

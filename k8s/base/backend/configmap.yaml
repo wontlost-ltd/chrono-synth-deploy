@@ -3,6 +3,9 @@ kind: ConfigMap
 metadata:
   name: backend-config
   namespace: chrono-synth
+  annotations:
+    # ArgoCD sync wave -5: ConfigMaps must be present before backend pods reference them.
+    argocd.argoproj.io/sync-wave: '-5'
   labels:
     app.kubernetes.io/name: chrono-synth-os
     app.kubernetes.io/component: backend

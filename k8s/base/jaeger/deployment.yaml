@@ -3,6 +3,9 @@ kind: Deployment
 metadata:
   name: jaeger
   namespace: chrono-synth
+  annotations:
+    # ArgoCD sync wave 10: Receives OTLP from backend.
+    argocd.argoproj.io/sync-wave: '10'
   labels:
     app.kubernetes.io/name: jaeger
     app.kubernetes.io/component: tracing

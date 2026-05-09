@@ -3,6 +3,9 @@ kind: Service
 metadata:
   name: prometheus
   namespace: chrono-synth
+  annotations:
+    # ArgoCD sync wave 10: Prometheus service — see deployment.
+    argocd.argoproj.io/sync-wave: '10'
   labels:
     app.kubernetes.io/name: prometheus
     app.kubernetes.io/component: observability

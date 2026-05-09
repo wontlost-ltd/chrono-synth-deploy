@@ -6,6 +6,10 @@ kind: NetworkPolicy
 metadata:
   name: default-deny-all
   namespace: chrono-synth
+  annotations:
+    # ArgoCD sync wave -10: NetworkPolicy must exist before pods in the namespace
+    # so default-deny doesn't catch already-running pods on first sync.
+    argocd.argoproj.io/sync-wave: '-10'
 spec:
   podSelector: {}
   policyTypes:
@@ -19,6 +23,10 @@ kind: NetworkPolicy
 metadata:
   name: allow-dns-egress
   namespace: chrono-synth
+  annotations:
+    # ArgoCD sync wave -10: NetworkPolicy must exist before pods in the namespace
+    # so default-deny doesn't catch already-running pods on first sync.
+    argocd.argoproj.io/sync-wave: '-10'
 spec:
   podSelector: {}
   policyTypes:
@@ -46,6 +54,10 @@ kind: NetworkPolicy
 metadata:
   name: backend-policy
   namespace: chrono-synth
+  annotations:
+    # ArgoCD sync wave -10: NetworkPolicy must exist before pods in the namespace
+    # so default-deny doesn't catch already-running pods on first sync.
+    argocd.argoproj.io/sync-wave: '-10'
 spec:
   podSelector:
     matchLabels:
@@ -131,6 +143,10 @@ kind: NetworkPolicy
 metadata:
   name: frontend-policy
   namespace: chrono-synth
+  annotations:
+    # ArgoCD sync wave -10: NetworkPolicy must exist before pods in the namespace
+    # so default-deny doesn't catch already-running pods on first sync.
+    argocd.argoproj.io/sync-wave: '-10'
 spec:
   podSelector:
     matchLabels:
@@ -157,6 +173,10 @@ kind: NetworkPolicy
 metadata:
   name: observability-worker-policy
   namespace: chrono-synth
+  annotations:
+    # ArgoCD sync wave -10: NetworkPolicy must exist before pods in the namespace
+    # so default-deny doesn't catch already-running pods on first sync.
+    argocd.argoproj.io/sync-wave: '-10'
 spec:
   podSelector:
     matchLabels:
@@ -207,6 +227,10 @@ kind: NetworkPolicy
 metadata:
   name: jaeger-policy
   namespace: chrono-synth
+  annotations:
+    # ArgoCD sync wave -10: NetworkPolicy must exist before pods in the namespace
+    # so default-deny doesn't catch already-running pods on first sync.
+    argocd.argoproj.io/sync-wave: '-10'
 spec:
   podSelector:
     matchLabels:
@@ -245,6 +269,10 @@ kind: NetworkPolicy
 metadata:
   name: postgres-policy
   namespace: chrono-synth
+  annotations:
+    # ArgoCD sync wave -10: NetworkPolicy must exist before pods in the namespace
+    # so default-deny doesn't catch already-running pods on first sync.
+    argocd.argoproj.io/sync-wave: '-10'
 spec:
   podSelector:
     matchLabels:
@@ -270,6 +298,10 @@ kind: NetworkPolicy
 metadata:
   name: redis-policy
   namespace: chrono-synth
+  annotations:
+    # ArgoCD sync wave -10: NetworkPolicy must exist before pods in the namespace
+    # so default-deny doesn't catch already-running pods on first sync.
+    argocd.argoproj.io/sync-wave: '-10'
 spec:
   podSelector:
     matchLabels:
@@ -293,6 +325,10 @@ kind: NetworkPolicy
 metadata:
   name: prometheus-policy
   namespace: chrono-synth
+  annotations:
+    # ArgoCD sync wave -10: NetworkPolicy must exist before pods in the namespace
+    # so default-deny doesn't catch already-running pods on first sync.
+    argocd.argoproj.io/sync-wave: '-10'
 spec:
   podSelector:
     matchLabels:
@@ -334,6 +370,10 @@ kind: NetworkPolicy
 metadata:
   name: grafana-policy
   namespace: chrono-synth
+  annotations:
+    # ArgoCD sync wave -10: NetworkPolicy must exist before pods in the namespace
+    # so default-deny doesn't catch already-running pods on first sync.
+    argocd.argoproj.io/sync-wave: '-10'
 spec:
   podSelector:
     matchLabels:

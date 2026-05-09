@@ -3,6 +3,9 @@ kind: ConfigMap
 metadata:
   name: frontend-config
   namespace: chrono-synth
+  annotations:
+    # ArgoCD sync wave -5: Frontend runtime config required at nginx start.
+    argocd.argoproj.io/sync-wave: '-5'
   labels:
     app.kubernetes.io/name: chrono-synth-web
     app.kubernetes.io/component: frontend
