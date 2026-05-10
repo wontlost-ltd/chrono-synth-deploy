@@ -51,6 +51,111 @@ the *currently-synced* git ref. It does not pull new commits — that's still
 manual. So self-heal protects against drift from a human kubectl, not against
 unreviewed git changes.
 
+## Sync waves
+
+ArgoCD applies resources in **wave** order — lower waves first. We use
+6 wave bands so first-time bootstrap and large refreshes never see a
+backend pod CrashLooping while waiting for postgres, or a frontend
+pod returning 504 while backend is still rolling.
+
+```
+wave -10  namespace + NetworkPolicy
+              │ (must be present so default-deny doesn't catch
+              │  in-flight pods on first sync)
+wave  -5  ConfigMap + Secret
+              │ (pods reference these at startup; missing them =
+              │  CrashLoopBackOff "couldn't read /etc/...")
+wave   0  postgres + redis (data tier)
+              │ (backend pod readiness probe pings them)
+wave   5  backend + observability-worker (business tier)
+              │ (frontend nginx proxy_pass to them; prometheus
+              │  scrapes them)
+wave  10  frontend + prometheus + grafana + jaeger + alertmanager
+              │ (external-traffic-bearing surface, but Ingress
+              │  not yet open)
+wave  15  Ingress
+              (open public traffic last so a half-up stack never
+               serves users)
+```
+
+### How ArgoCD enforces ordering
+
+Sync wave is an **annotation** on each resource: `argocd.argoproj.io/sync-wave: '5'`.
+ArgoCD's app controller groups manifests by wave, applies wave N, **waits
+for all resources in wave N to become Healthy**, then proceeds to wave N+1.
+
+Within a wave order is undefined — ArgoCD applies in parallel. So all
+data-tier resources (postgres + redis statefulsets + their services) come
+up together; we don't try to make redis wait for postgres because it
+doesn't depend on it.
+
+### How to choose a wave for a new component
+
+Before adding a new manifest, ask: **what does it depend on at startup?**
+
+- **Pre-pod** (must exist before any pod): NetworkPolicy → wave -10;
+  ConfigMap/Secret → wave -5
+- **Backing service** (other pods read from it): wave 0 (data) or 5 (business)
+- **Consumer of business tier**: wave 10
+- **External-facing edge**: wave 15
+
+When in doubt, **default to wave 10** — slightly later is safer than
+slightly earlier; the worst case is an extra reconciliation cycle.
+
+### Generated ConfigMaps default to wave 0
+
+ConfigMaps generated via `configMapGenerator` in `k8s/base/kustomization.yaml`
+(grafana dashboards, prometheus.yml) **don't carry an explicit wave
+annotation**. ArgoCD treats unannotated resources as wave 0 (alongside
+postgres/redis). This is fine: the pods consuming them are at wave 10
+or later, so the ConfigMap is always ready when the pod tries to mount.
+
+If a future generated ConfigMap is critical-path for an *earlier* wave
+(rare), add a kustomize patch to set its annotation explicitly. Example
+in `k8s/addons/observability-slo/patches/` for inspiration.
+
+### Inspecting wave state in production
+
+```sh
+# Show all resources for an app, sorted by sync wave:
+argocd app resources chrono-synth-prod --orphaned=false \
+  -o json | jq -r '.items[] | "\(.syncWave // 0)\t\(.kind)/\(.name)"' \
+  | sort -n
+
+# Check a specific resource's wave annotation:
+kubectl get deploy chrono-synth-os -n chrono-synth -o jsonpath='{.metadata.annotations.argocd\.argoproj\.io/sync-wave}'
+
+# When a sync stalls — show which wave is "in progress":
+argocd app sync-status chrono-synth-prod
+# Look for "wave N: applying" or "wave N: timeout"
+```
+
+### Failure mode: wave N stuck
+
+ArgoCD waits for all resources in a wave to become Healthy before moving
+on. If wave 5 (backend) never becomes Healthy because postgres (wave 0)
+crashed, the sync hangs forever. Triage:
+
+1. `argocd app get <name>` — find which resource is "Progressing"
+2. `kubectl describe <kind>/<name> -n chrono-synth` — read events
+3. Fix the root cause (postgres OOM? Pull secret missing?)
+4. ArgoCD auto-resumes once the wave's resources go Healthy
+5. If the resource is genuinely impossible to make Healthy (bad image
+   tag committed), revert via `argocd app rollback` and open a fix PR
+
+### Modifying wave assignments
+
+Don't randomly bump waves. Each annotation change should:
+
+1. Have a clear "depends on what" justification in the commit message
+2. Get reviewed by someone who knows the dependency graph
+3. Not break first-time bootstrap (test by deleting the dev namespace
+   and re-syncing if you can)
+
+`scripts/validate-k8s.sh` enforces baseline coverage (every workload
+has *some* wave annotation); changing the wave value itself is not
+gated by CI.
+
 ## Routine: rolling out a change
 
 1. Open a PR against `main` of `chrono-synth-deploy` modifying the relevant

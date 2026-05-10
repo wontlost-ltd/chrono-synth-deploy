@@ -3,6 +3,9 @@ kind: Deployment
 metadata:
   name: prometheus
   namespace: chrono-synth
+  annotations:
+    # ArgoCD sync wave 10: Scrapes backend metrics; backend must be up first.
+    argocd.argoproj.io/sync-wave: '10'
   labels:
     app.kubernetes.io/name: prometheus
     app.kubernetes.io/component: observability

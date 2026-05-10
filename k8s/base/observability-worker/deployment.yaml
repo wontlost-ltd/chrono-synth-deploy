@@ -3,6 +3,9 @@ kind: Deployment
 metadata:
   name: observability-worker
   namespace: chrono-synth
+  annotations:
+    # ArgoCD sync wave 5: Business tier — consumes ledger from backend.
+    argocd.argoproj.io/sync-wave: '5'
   labels:
     app.kubernetes.io/name: observability-worker
     app.kubernetes.io/component: observability

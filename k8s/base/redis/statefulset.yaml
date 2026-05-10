@@ -3,6 +3,9 @@ kind: StatefulSet
 metadata:
   name: redis
   namespace: chrono-synth
+  annotations:
+    # ArgoCD sync wave 0: Data tier — must be ready before backend pods start.
+    argocd.argoproj.io/sync-wave: '0'
   labels:
     app.kubernetes.io/name: redis
     app.kubernetes.io/component: cache

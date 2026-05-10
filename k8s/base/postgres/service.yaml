@@ -3,6 +3,9 @@ kind: Service
 metadata:
   name: postgres
   namespace: chrono-synth
+  annotations:
+    # ArgoCD sync wave 0: Data tier service — see statefulset.
+    argocd.argoproj.io/sync-wave: '0'
   labels:
     app.kubernetes.io/name: postgres
     app.kubernetes.io/component: database

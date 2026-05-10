@@ -4,6 +4,9 @@ kind: Secret
 metadata:
   name: alertmanager-secrets
   namespace: chrono-synth
+  annotations:
+    # ArgoCD sync wave -5: Slack webhook URL must exist before alertmanager pod starts.
+    argocd.argoproj.io/sync-wave: '-5'
   labels:
     app.kubernetes.io/name: alertmanager
     app.kubernetes.io/component: slo
@@ -17,6 +20,9 @@ kind: ConfigMap
 metadata:
   name: alertmanager-config
   namespace: chrono-synth
+  annotations:
+    # ArgoCD sync wave -5: alertmanager.yml config must exist before alertmanager pod starts.
+    argocd.argoproj.io/sync-wave: '-5'
   labels:
     app.kubernetes.io/name: alertmanager
     app.kubernetes.io/component: slo
@@ -82,6 +88,9 @@ kind: Deployment
 metadata:
   name: alertmanager
   namespace: chrono-synth
+  annotations:
+    # ArgoCD sync wave 10: Observability tier — same wave as prometheus, depends on backend (wave 5).
+    argocd.argoproj.io/sync-wave: '10'
   labels:
     app.kubernetes.io/name: alertmanager
     app.kubernetes.io/component: slo
@@ -149,6 +158,9 @@ kind: Service
 metadata:
   name: alertmanager
   namespace: chrono-synth
+  annotations:
+    # ArgoCD sync wave 10: Service follows Deployment wave so prometheus can route alerts the moment alertmanager is up.
+    argocd.argoproj.io/sync-wave: '10'
   labels:
     app.kubernetes.io/name: alertmanager
     app.kubernetes.io/component: slo
@@ -166,6 +178,9 @@ kind: NetworkPolicy
 metadata:
   name: alertmanager-policy
   namespace: chrono-synth
+  annotations:
+    # ArgoCD sync wave -10: NetworkPolicy must exist before pods are created in the namespace.
+    argocd.argoproj.io/sync-wave: '-10'
   labels:
     app.kubernetes.io/name: alertmanager
     app.kubernetes.io/component: slo

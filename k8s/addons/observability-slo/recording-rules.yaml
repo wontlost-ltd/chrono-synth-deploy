@@ -3,6 +3,9 @@ kind: ConfigMap
 metadata:
   name: chrono-slo-recording-rules
   namespace: chrono-synth
+  annotations:
+    # ArgoCD sync wave -5: SLO recording rules ConfigMap must exist before prometheus loads /etc/prometheus/rules/.
+    argocd.argoproj.io/sync-wave: '-5'
   labels:
     app.kubernetes.io/name: prometheus
     app.kubernetes.io/component: slo

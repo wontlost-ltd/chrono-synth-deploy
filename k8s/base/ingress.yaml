@@ -3,13 +3,16 @@ kind: Ingress
 metadata:
   name: chrono-synth-ingress
   namespace: chrono-synth
-  labels:
-    app.kubernetes.io/part-of: chrono-synth
   annotations:
+    # ArgoCD sync wave 15: Open external traffic last; everything behind it
+    # must be ready. See docs/operations/gitops-runbook.md "Sync waves".
+    argocd.argoproj.io/sync-wave: '15'
     # Traefik（k3s 默认 Ingress Controller）
     traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
     # WebSocket 支持
     traefik.ingress.kubernetes.io/service.sticky.cookie: "false"
+  labels:
+    app.kubernetes.io/part-of: chrono-synth
 spec:
   ingressClassName: traefik
   rules:

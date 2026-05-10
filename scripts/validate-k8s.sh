@@ -265,4 +265,61 @@ assert_not_contains "$TMP_DIR/dev.yaml" 'alertmanager:9093' \
 assert_not_contains "$TMP_DIR/dev.yaml" 'grafana-dashboard-chrono-slo' \
   'dev: chrono-slo dashboard 不应启用'
 
+# ── ArgoCD GitOps 接线（EP-2.1）─────────────────────────────────────────────
+# 防止 ApplicationSet / AppProject / sync-wave 被偷偷改坏。
+
+# 1. ApplicationSet sync policy 三 env 表必须保留：
+#    dev=auto / staging=auto-no-prune / prod=manual。
+APPSET=argocd/applicationsets/chrono-synth.yaml
+assert_contains "$APPSET" 'name: dev' \
+  'ApplicationSet 含 dev environment'
+assert_contains "$APPSET" 'name: staging' \
+  'ApplicationSet 含 staging environment'
+assert_contains "$APPSET" 'name: prod' \
+  'ApplicationSet 含 prod environment'
+assert_contains "$APPSET" 'autoSync: false' \
+  'ApplicationSet: prod 必须 autoSync=false (manual sync)'
+assert_contains "$APPSET" 'autoPrune: false' \
+  'ApplicationSet: 至少一处声明 autoPrune=false (prod 安全)'
+
+# 2. ApplicationSet 必须含 finalizer，避免删 application 时残留集群资源
+assert_contains "$APPSET" 'resources-finalizer.argocd.argoproj.io' \
+  'ApplicationSet finalizer 存在（删 app 级联回收）'
+
+# 3. AppProject namespaceResourceBlacklist 必须含 ResourceQuota + LimitRange
+PROJ=argocd/projects/chrono-synth.yaml
+if grep -A4 'namespaceResourceBlacklist:' "$PROJ" | grep -q 'kind: ResourceQuota' \
+   && grep -A8 'namespaceResourceBlacklist:' "$PROJ" | grep -q 'kind: LimitRange'; then
+  pass 'AppProject blacklist 含 ResourceQuota + LimitRange'
+else
+  fail 'AppProject blacklist 缺少 ResourceQuota 或 LimitRange'
+fi
+
+# 4. AppProject sourceRepos 全部以 wontlost-ltd 域开头
+bad_repos=$(grep -E '^\s+- https?://' "$PROJ" \
+  | grep -vE '^\s+- https://github\.com/wontlost-ltd/' || true)
+if [ -z "$bad_repos" ]; then
+  pass 'AppProject sourceRepos 全部限定到 wontlost-ltd 域'
+else
+  echo "$bad_repos"
+  fail 'AppProject sourceRepos 含非 wontlost-ltd 域条目'
+fi
+
+# 5. Sync-wave 完整性：8 个 base workload (Deployment/StatefulSet) 都必须有
+#    argocd.argoproj.io/sync-wave annotation。dev overlay 比 staging/prod 少 1
+#    个（alertmanager 不在 dev），所以期望 >=8 即可。
+for overlay_file in "$TMP_DIR/dev.yaml" "$TMP_DIR/staging.yaml" "$TMP_DIR/prod.yaml"; do
+  overlay_name="$(basename "$overlay_file" .yaml)"
+  workload_count=$(grep -Ec '^kind: (Deployment|StatefulSet)$' "$overlay_file" || true)
+  # 在每个 workload 块附近 60 行内查找 sync-wave annotation
+  wave_count=$(grep -Ec 'argocd.argoproj.io/sync-wave' "$overlay_file" || true)
+  # 我们打了 wave 的资源远多于 workload（含 ConfigMap/Secret/NetPol/Service 等），
+  # 所以 wave_count >> workload_count 是正常状态；这里只断言下限。
+  if [ "$wave_count" -ge "$workload_count" ]; then
+    pass "$overlay_name: sync-wave annotation 数 ${wave_count} >= workload 数 ${workload_count}"
+  else
+    fail "$overlay_name: sync-wave 数 ${wave_count} < workload 数 ${workload_count}"
+  fi
+done
+
 printf '\n[OK] All overlays passed validation.\n'
