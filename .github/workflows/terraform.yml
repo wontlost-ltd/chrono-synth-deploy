@@ -40,7 +40,7 @@ jobs:
         # with `terraform fmt -recursive terraform/` and commit.
 
       - name: Setup tflint
-        uses: terraform-linters/setup-tflint@v4
+        uses: terraform-linters/setup-tflint@v6
         with:
           tflint_version: ${{ env.TFLINT_VERSION }}
 
