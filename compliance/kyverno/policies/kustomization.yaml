@@ -12,6 +12,7 @@ resources:
   - disallow-privileged.yaml
   - require-resource-limits.yaml
   - disallow-host-namespaces.yaml
+  - disallow-host-path.yaml
   - require-non-root.yaml
   - disallow-capabilities.yaml
   - require-readonly-rootfs.yaml

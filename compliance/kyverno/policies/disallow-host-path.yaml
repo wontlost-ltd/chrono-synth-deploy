@@ -1,0 +1,35 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: disallow-host-path-volumes
+  annotations:
+    policies.kyverno.io/title: Disallow hostPath volumes
+    policies.kyverno.io/category: Pod Security Standards (Restricted)
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: |
+      hostPath volumes mount node filesystem paths into pods, breaking the
+      container/node boundary. A compromised pod with hostPath can read
+      kubelet credentials, container runtime sockets, or other tenant data.
+      Maps to PSA-restricted, CIS 5.7.3, NSA/CISA Kubernetes Hardening
+      Guide §3.2.
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: host-path-volumes
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+      exclude:
+        any:
+          # Compliance scanners (kube-bench) and CSI drivers legitimately
+          # mount hostPath; isolate them to their own namespaces.
+          - resources:
+              namespaces: [compliance, kube-system]
+      validate:
+        message: hostPath volumes are disallowed. Use PersistentVolumeClaim instead. Compliance/CSI workloads must run in `compliance` or `kube-system`.
+        pattern:
+          spec:
+            =(volumes):
+              - X(hostPath): "null"
