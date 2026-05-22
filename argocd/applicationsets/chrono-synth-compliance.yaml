@@ -1,0 +1,96 @@
+# GA Sprint 3 Step 7 — Kyverno ClusterPolicy deployment via ArgoCD.
+#
+# The Kyverno policies in compliance/kyverno/policies/ enforce supply-chain
+# + workload hardening across every namespace. They are ClusterPolicies,
+# so they apply globally regardless of which app namespace a workload
+# lands in. We deploy them through their own ApplicationSet (one
+# Application per cluster) instead of folding them into the chrono-synth
+# overlays for three reasons:
+#
+#   1. Lifecycle decoupling — policies survive when individual app
+#      Applications are torn down. A prod app delete should never
+#      accidentally remove the verify-image-signature ClusterPolicy.
+#
+#   2. Multi-cluster fan-out — the cluster generator deploys the same
+#      policy set to every registered cluster, so we don't have to
+#      replicate it inside per-cluster overlays.
+#
+#   3. Manual sync for prod — production policy changes go through PR
+#      review and explicit ArgoCD sync, never auto-applied. Compliance
+#      drift is the whole point of these policies; an auto-sync that
+#      relaxes them defeats the control.
+#
+# Prerequisites:
+#   - Kyverno operator installed in the cluster (argocd/install/ chart).
+#   - ArgoCD cluster registry has each target cluster registered with
+#     labels: env=dev|staging|prod, region=<region>.
+
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: chrono-synth-compliance
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ['missingkey=error']
+
+  generators:
+    - clusters:
+        # 默认 selector：所有非 argocd-server-itself 集群都需要。
+        # 若需要排除某个集群（如 sandbox），在 ArgoCD 集群上加
+        # label `compliance.chrono-synth.io/exempt=true` 即可。
+        selector:
+          matchExpressions:
+            - key: compliance.chrono-synth.io/exempt
+              operator: NotIn
+              values: ['true']
+
+  template:
+    metadata:
+      # `{{.name}}` 是 ArgoCD cluster generator 注入的集群名（in-cluster / prod-us-west / ...）
+      name: 'chrono-synth-compliance-{{.name}}'
+      labels:
+        app.kubernetes.io/name: chrono-synth-compliance
+        app.kubernetes.io/part-of: chrono-synth
+        cluster: '{{.name}}'
+      finalizers:
+        - resources-finalizer.argocd.argoproj.io
+    spec:
+      project: chrono-synth
+
+      source:
+        repoURL: https://github.com/wontlost-ltd/chrono-synth-deploy.git
+        targetRevision: main
+        path: compliance/kyverno/policies
+        # 不需要 kustomize patches —— policies 都是 ClusterPolicy，跨集群形状相同。
+
+      destination:
+        server: '{{.server}}'
+        # ClusterPolicy 是 cluster-scoped；任意 namespace 都行，
+        # 这里挂在 kyverno 是出于运维可发现性。
+        namespace: kyverno
+
+      syncPolicy:
+        automated:
+          # 所有集群默认 auto-sync + selfHeal —— compliance 必须立刻收敛，
+          # 即使 prod 也不允许 git 与集群偏离。
+          # 注意：不开 prune；policy 删除走 PR + 手动 sync 流程。
+          prune: false
+          selfHeal: true
+          allowEmpty: false
+        syncOptions:
+          - CreateNamespace=true
+          - ApplyOutOfSyncOnly=true
+          - ServerSideApply=true
+        retry:
+          limit: 5
+          backoff:
+            duration: 30s
+            factor: 2
+            maxDuration: 10m
+
+      revisionHistoryLimit: 20
+
+  syncPolicy:
+    applicationsSync: sync
+    preserveResourcesOnDeletion: false

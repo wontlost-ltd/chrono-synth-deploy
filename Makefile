@@ -1,5 +1,5 @@
 # ChronoSynth 部署快捷命令
-.PHONY: help build push k3s-dev k3s-staging k3s-prod podman-up podman-down podman-logs e2e status secrets conformance conformance-offline clean
+.PHONY: help build push k3s-dev k3s-staging k3s-prod podman-up podman-down podman-logs e2e status secrets conformance conformance-offline lint-compliance clean
 
 REGISTRY ?= ghcr.io/wontlost-ltd
 TAG ?= latest
@@ -53,6 +53,9 @@ conformance: ## 运行 portability conformance suite（需后端运行）
 
 conformance-offline: ## 运行 portability conformance suite（离线/schema 模式）
 	bash scripts/portability-conformance.sh --offline
+
+lint-compliance: ## 校验 Kyverno 策略 + ArgoCD 部署链路（GA Step 7）
+	bash scripts/lint-compliance.sh
 
 clean: ## 清理本地容器和卷
 	./deploy.sh podman down
