@@ -1,0 +1,36 @@
+# GitHub CODEOWNERS for chrono-synth-deploy.
+#
+# Each rule maps a path pattern to the team(s) whose review is REQUIRED
+# before the PR can merge. The compliance / supply-chain rules below are
+# the GA SOC2 audit anchor: any change to a Kyverno policy, the
+# compliance AppProject, or the policy ApplicationSet must be approved
+# by the security-operators team. Argo CD's chrono-synth-compliance
+# AppProject deliberately does not grant `applications, override`, so
+# Git review is the only on-ramp for policy changes.
+#
+# IMPORTANT: GitHub CODEOWNERS uses LAST-MATCHING-RULE-WINS precedence.
+# Specific compliance paths MUST appear after any broader rule that
+# covers their parent directory; otherwise the broader rule overrides
+# the security-operators claim. The lint-compliance.sh script asserts
+# this ordering.
+
+# Default — platform team owns everything not otherwise claimed.
+*                                                               @wontlost-ltd/platform
+
+# Broader rules first.
+/argocd/projects/                                               @wontlost-ltd/platform @wontlost-ltd/security-operators
+/argocd/install/                                                @wontlost-ltd/platform
+
+# Production deployment manifests + Helm charts.
+/k8s/overlays/prod/                                             @wontlost-ltd/platform @wontlost-ltd/sre
+/helm/                                                          @wontlost-ltd/platform
+
+# Compliance Kyverno policies + their ArgoCD wiring (MUST be last so
+# they win over the broader /argocd/projects/ rule above).
+/compliance/                                                    @wontlost-ltd/security-operators
+/argocd/projects/chrono-synth-compliance.yaml                   @wontlost-ltd/security-operators
+/argocd/applicationsets/chrono-synth-compliance.yaml            @wontlost-ltd/security-operators
+/scripts/lint-compliance.sh                                     @wontlost-ltd/security-operators
+# CODEOWNERS itself must be owned by security-operators — otherwise
+# any code-owner could rewrite the audit anchor.
+/.github/CODEOWNERS                                             @wontlost-ltd/security-operators

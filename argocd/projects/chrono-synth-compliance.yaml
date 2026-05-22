@@ -1,0 +1,80 @@
+# GA Sprint 3 Step 7 — dedicated AppProject for cluster-wide Kyverno policies.
+#
+# Why a separate project from `chrono-synth`:
+#   1. RBAC isolation — only platform-security operators can push policy
+#      changes; app developers (proj:chrono-synth:deployer) cannot touch
+#      ClusterPolicy resources.
+#   2. Destination scope — policies need to deploy to the `kyverno`
+#      namespace on every registered cluster, not just `chrono-synth*`
+#      in-cluster.
+#   3. Cluster-scoped resource allowlist — ClusterPolicy lives in
+#      kyverno.io/v1; the chrono-synth project deliberately excludes
+#      CRDs to prevent accidental operator installs. Splitting projects
+#      keeps that guarantee while still allowing the policy resources here.
+#   4. Sync windows — production deploy windows must not block compliance
+#      drift recovery. This project has no syncWindows so selfHeal
+#      can always converge.
+
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: chrono-synth-compliance
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: Chrono Synth supply-chain + workload Kyverno ClusterPolicies
+
+  sourceRepos:
+    - https://github.com/wontlost-ltd/chrono-synth-deploy.git
+    - https://github.com/wontlost-ltd/chrono-synth-deploy
+
+  # `*` server matches every registered ArgoCD cluster (the cluster
+  # generator in chrono-synth-compliance.yaml fans out one Application
+  # per cluster). The `kyverno` namespace is the operational home for
+  # ClusterPolicy resources — they're cluster-scoped but Argo uses the
+  # destination namespace as the default for any namespaced objects.
+  destinations:
+    - namespace: kyverno
+      server: '*'
+    - namespace: kyverno-*
+      server: '*'
+
+  clusterResourceWhitelist:
+    # Kyverno ClusterPolicy is cluster-scoped. PolicyReport is created
+    # by Kyverno itself, not synced from git, so we don't whitelist it.
+    - group: kyverno.io
+      kind: ClusterPolicy
+
+  # Defense in depth: even though we mostly whitelist cluster-scoped
+  # Kyverno resources, allow a small set of namespaced helpers (Policy
+  # for namespaced rules, ConfigMap for shared exclusion lists). Deny
+  # anything that could grant broader powers (e.g. an accidental
+  # ClusterRoleBinding that escalates the kyverno SA) — those simply
+  # don't appear in this list.
+  namespaceResourceWhitelist:
+    # Namespaced Kyverno Policy (correctly scoped — Policy is namespaced
+    # in the Kyverno API, only ClusterPolicy is cluster-scoped).
+    - group: kyverno.io
+      kind: Policy
+    - group: ''
+      kind: ConfigMap
+
+  orphanedResources:
+    warn: true
+
+  roles:
+    - name: security-operator
+      description: |
+        Sync Kyverno policies across clusters. Deliberately NOT granted
+        `applications, override` — every policy change must enter via a
+        PR to chrono-synth-deploy/compliance/kyverno/policies/ and pass
+        CODEOWNERS review. Break-glass policy disablement runs through
+        the standard cluster-admin escalation path documented in
+        docs/operations/policy-breakglass-runbook.md, not via Argo
+        override.
+      policies:
+        - p, proj:chrono-synth-compliance:security-operator, applications, get, chrono-synth-compliance/*, allow
+        - p, proj:chrono-synth-compliance:security-operator, applications, sync, chrono-synth-compliance/*, allow
+      groups:
+        - wontlost-ltd:security-operators

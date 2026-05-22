@@ -15,15 +15,21 @@
 #      policy set to every registered cluster, so we don't have to
 #      replicate it inside per-cluster overlays.
 #
-#   3. Manual sync for prod — production policy changes go through PR
-#      review and explicit ArgoCD sync, never auto-applied. Compliance
-#      drift is the whole point of these policies; an auto-sync that
-#      relaxes them defeats the control.
+#   3. Auto-sync everywhere — production policy changes go through PR
+#      review and CODEOWNERS, but once merged they MUST converge in
+#      seconds, including prod. Compliance drift defeats the control.
+#      A separate AppProject (chrono-synth-compliance) confines who can
+#      open such PRs.
 #
 # Prerequisites:
 #   - Kyverno operator installed in the cluster (argocd/install/ chart).
 #   - ArgoCD cluster registry has each target cluster registered with
-#     labels: env=dev|staging|prod, region=<region>.
+#     label `compliance.chrono-synth.io/enabled=true`. This is a
+#     positive opt-in selector — Kubernetes set-based NotIn matches
+#     missing labels, which would otherwise pull in the local argocd
+#     control-plane cluster too.
+#   - The `chrono-synth-compliance` AppProject exists; see
+#     argocd/projects/chrono-synth-compliance.yaml.
 
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
@@ -36,18 +42,20 @@ spec:
 
   generators:
     - clusters:
-        # 默认 selector：所有非 argocd-server-itself 集群都需要。
-        # 若需要排除某个集群（如 sandbox），在 ArgoCD 集群上加
-        # label `compliance.chrono-synth.io/exempt=true` 即可。
+        # Positive opt-in selector. Each target cluster must be
+        # registered with `compliance.chrono-synth.io/enabled=true`.
+        # This is safer than NotIn(exempt=true) because Kubernetes
+        # set-based selectors treat missing keys as matching NotIn,
+        # which would silently include every unlabeled cluster
+        # including the local argocd control plane.
         selector:
-          matchExpressions:
-            - key: compliance.chrono-synth.io/exempt
-              operator: NotIn
-              values: ['true']
+          matchLabels:
+            compliance.chrono-synth.io/enabled: 'true'
 
   template:
     metadata:
-      # `{{.name}}` 是 ArgoCD cluster generator 注入的集群名（in-cluster / prod-us-west / ...）
+      # `{{.name}}` is the ArgoCD cluster-generator injected cluster
+      # name (in-cluster / prod-us-west / ...).
       name: 'chrono-synth-compliance-{{.name}}'
       labels:
         app.kubernetes.io/name: chrono-synth-compliance
@@ -56,25 +64,34 @@ spec:
       finalizers:
         - resources-finalizer.argocd.argoproj.io
     spec:
-      project: chrono-synth
+      # Dedicated project: confines who can change compliance + which
+      # cluster-scoped resources may be deployed. See
+      # argocd/projects/chrono-synth-compliance.yaml.
+      project: chrono-synth-compliance
 
       source:
         repoURL: https://github.com/wontlost-ltd/chrono-synth-deploy.git
         targetRevision: main
         path: compliance/kyverno/policies
-        # 不需要 kustomize patches —— policies 都是 ClusterPolicy，跨集群形状相同。
+        # No kustomize patches — policies are ClusterPolicy and have the
+        # same shape across clusters.
 
       destination:
         server: '{{.server}}'
-        # ClusterPolicy 是 cluster-scoped；任意 namespace 都行，
-        # 这里挂在 kyverno 是出于运维可发现性。
+        # ClusterPolicy is cluster-scoped, but Argo uses the destination
+        # namespace as the default for any namespaced helpers (e.g.
+        # a future ConfigMap). `kyverno` is the conventional namespace.
         namespace: kyverno
 
       syncPolicy:
         automated:
-          # 所有集群默认 auto-sync + selfHeal —— compliance 必须立刻收敛，
-          # 即使 prod 也不允许 git 与集群偏离。
-          # 注意：不开 prune；policy 删除走 PR + 手动 sync 流程。
+          # All clusters auto-sync + selfHeal — compliance must converge
+          # immediately. PR review + CODEOWNERS gate WHAT lands in git;
+          # ArgoCD then propagates uniformly.
+          # prune=false is deliberate: a policy file removed from git
+          # stays in the cluster until the security-operator runs an
+          # explicit `argocd app sync --prune` after review. This makes
+          # accidental policy deletion impossible to ship unnoticed.
           prune: false
           selfHeal: true
           allowEmpty: false
