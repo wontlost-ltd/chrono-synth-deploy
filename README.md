@@ -1,12 +1,17 @@
 # ChronoSynth Deploy
 
-The deployment topology for **ChronoSynth — agent governance for enterprise
-AI**. This repo contains the Helm chart, Terraform modules (EKS / RDS /
-ElastiCache / KMS / VPC / S3), and operational runbooks for putting
-ChronoSynth in front of your AI agents in production — either self-hosted
-on EKS / GKE with your own KMS keys, or as a podman stack for local
-development and air-gapped previews.
+The deployment topology for **ChronoSynth (Enterprise)** — agent governance
+for enterprise AI. This repo contains the Helm chart, Terraform modules
+(EKS / RDS / ElastiCache / KMS / VPC / S3), and operational runbooks for
+putting ChronoSynth in front of your AI agents in production — either
+self-hosted on EKS / GKE with your own KMS keys, or as a podman stack for
+local development and air-gapped previews.
 
+> 🧭 The consumer-facing ChronoCompanion product (mobile + web + desktop)
+> doesn't ship via Helm — it goes through App Store / Play Store / a
+> separate web host. This repo is **enterprise-only**. See
+> [ADR-0046](../chrono-synth-os/docs/adr/0046-dual-product-companion.md).
+>
 > Product narrative: see `chrono-synth-os/.claude/gtm/01-pr-faq.md`.
 
 当前仓库覆盖三类能力，并且本地运行完全基于原生 `podman` CLI 脚本，不依赖任何 Compose 兼容层：
