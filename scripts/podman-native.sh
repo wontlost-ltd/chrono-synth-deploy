@@ -105,6 +105,8 @@ load_env() {
   : "${REDPANDA_BOOTSTRAP_TOPICS:=observability.events tenant-e2e.observability.events}"
   : "${PROMETHEUS_IMAGE:=prom/prometheus:latest}"
   : "${GRAFANA_IMAGE:=grafana/grafana:latest}"
+  # 后端启动会执行 CREATE EXTENSION vector（DSL 迁移），必须用 pgvector 镜像而非裸 postgres
+  : "${POSTGRES_IMAGE:=docker.io/pgvector/pgvector:pg17}"
 }
 
 require_podman() {
@@ -274,7 +276,7 @@ run_postgres() {
     --health-timeout 5s \
     --health-retries 5 \
     --health-start-period 10s \
-    postgres:17-alpine >/dev/null
+    "$POSTGRES_IMAGE" >/dev/null
 }
 
 run_redis() {
