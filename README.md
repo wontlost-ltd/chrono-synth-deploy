@@ -209,7 +209,7 @@ chrono-synth-deploy/
 - 需要可用的 Podman daemon / machine（例如 `podman machine start`）
 - 建议同时具备 `curl`、`jq`、`openssl`
 - `kubectl` + k3s 集群访问
-- 同级源码目录：`../chrono-synth-os/` 与 `../chrono-synth-web/`
+- 同级源码目录：`../chrono-synth-os/`（前端 chrono-synth-web 已融合进其 `apps/web/`，ADR-0049）
 
 ## 验证建议
 
