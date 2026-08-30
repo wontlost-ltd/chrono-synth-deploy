@@ -27,7 +27,7 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER_LABELS && fromJSON(vars.CI_RUNNER_LABELS) || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup terraform
         uses: hashicorp/setup-terraform@v4
@@ -57,7 +57,7 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER_LABELS && fromJSON(vars.CI_RUNNER_LABELS) || 'ubuntu-latest' }}
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       # tfsec is in maintenance mode; aquasecurity is consolidating into
       # trivy. Migrated 2026-05; .trivyignore documents accepted upstream
@@ -87,7 +87,7 @@ jobs:
     env:
       TF_IN_AUTOMATION: 'true'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup terraform
         uses: hashicorp/setup-terraform@v4
